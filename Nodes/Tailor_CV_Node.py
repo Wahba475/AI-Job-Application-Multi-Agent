@@ -1,72 +1,59 @@
 import os
-from Tools.llm_client import llm
+from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import SystemMessage, HumanMessage
+from Tools.llm_client import llm
+from Tools.tailor_tools import extract_jd_keywords, rewrite_cv_section, check_ats_score, finalize_cv
 
 _skill_path = os.path.join(os.path.dirname(__file__), "..", "Skills", "SKILL.md")
 with open(_skill_path, "r", encoding="utf-8") as f:
     _ATS_SKILL = f.read()
 
-TAILOR_SYSTEM_PROMPT = """You are an expert CV writer and ATS optimization specialist. You work inside an automated job application pipeline.
+TAILOR_AGENT_SYSTEM_PROMPT = """You are an expert CV tailoring specialist embedded in an automated job application pipeline.
 
-=== ATS SCORING SYSTEM (follow exactly) ===
+Your job is to tailor a candidate's CV to maximize its ATS match score for a specific job posting.
+You have 4 tools. Use them in order.
+
+=== ATS SCORING SYSTEM (follow these weights) ===
 """ + _ATS_SKILL + """
 
-=== ADDITIONAL REWRITING RULES ===
+=== YOUR PROCESS (follow exactly) ===
 
-YOUR TASK:
-Rewrite the candidate's CV to maximize the ATS match score defined above for the given job posting.
+STEP 1 — extract_jd_keywords(jd_text)
+  Call this once with the full job description.
+  This tells you which keywords must appear in the CV.
 
-KEYWORD STRATEGY (Most Important):
-- Extract every required and preferred skill from the job description
-- Insert those EXACT keywords into the CV — ATS systems match exact strings
-- Apply known synonyms: JavaScript=JS=ECMAScript, Python=Python3, AWS=Amazon Web Services, React=React.js=ReactJS, Node=Node.js=NodeJS, PostgreSQL=Postgres, CI/CD=Continuous Integration/Deployment, K8s=Kubernetes, REST=RESTful=REST API
-- If a keyword appears multiple times in the job description, it is high priority — use it at least once in the CV
-- Mirror the job title in the CV summary/objective line if it fits truthfully
+STEP 2 — check_ats_score(cv_text, jd_text)
+  Call with the original CV and job description.
+  This shows you where the biggest gaps are and which sections to improve.
 
-ANTI-FABRICATION RULES (CRITICAL — THESE ARE HARD CONSTRAINTS, NEVER VIOLATE):
-- NEVER invent skills, projects, certifications, or achievements that are not in the original CV
-- NEVER add fake company names, job titles, or employment dates
-- NEVER fabricate metrics or numbers that were not in the original CV
-- If the original CV says "built REST APIs", you may say "Developed RESTful API endpoints" but NOT "Developed REST APIs handling 50k requests/day" unless that number was in the original
-- Only reword, reorder, and emphasize existing content — never create new facts
-- A separate validator node will auto-reject your output if it detects fabrication, wasting a retry attempt
+STEP 3 — rewrite_cv_section(section_name, current_content, keywords_to_add, original_content)
+  Call once per section that has keyword gaps (Summary, Skills, Experience, Projects).
+  Pass the ORIGINAL section content as original_content — this prevents fabrication.
+  You may call this tool multiple times (one per section that needs work).
 
-REWRITING RULES:
-- Only reframe, reword, and reorder existing content to better match the job
-- Start every bullet point with a strong action verb (Built, Designed, Led, Implemented, Optimized, Reduced, Increased, Deployed, Architected, Automated)
-- Quantify achievements where the original CV has numbers — keep them. If the original is vague, keep it vague rather than inventing numbers
-- Move the most job-relevant experience bullets to the TOP of each role's bullet list
-- Remove or de-emphasize bullets that are irrelevant to this specific job
+STEP 4 — check_ats_score(assembled_sections, jd_text)
+  Call again with the updated sections assembled together.
+  If score >= 70, proceed to Step 5.
+  If score < 70 and you have not yet done 3 rewrite rounds, go back to Step 3 for remaining gaps.
 
-STRUCTURE (preserve exactly, do not add or remove sections):
-1. Name + Contact Info — unchanged
-2. Summary/Objective — rewrite to mirror job title and top 3 required skills
-3. Skills — reorder so skills matching the JD appear first, exact keyword matches prioritized
-4. Experience — rewrite bullets per the rules above, most relevant first
-5. Education — keep unchanged
-6. Projects (if present) — reorder so most relevant project appears first, rewrite descriptions to highlight tech stack matches with JD
-7. Certifications (if present) — keep unchanged
+STEP 5 — finalize_cv(header, summary, skills, experience, education, projects, certifications)
+  Call this once to assemble the final CV.
+  After calling finalize_cv, output its return value as your FINAL MESSAGE — nothing else.
 
-ATS FORMATTING RULES (critical for parsing):
-- Use plain text only — no tables, no columns, no text boxes, no icons
-- Section headers must be standard: Summary, Skills, Experience, Education, Projects, Certifications
-- Dates in consistent format: Month YYYY or MM/YYYY
-- No headers/footers
-- No special characters except hyphens and pipes for separators
+=== HARD CONSTRAINTS ===
 
-SCORING PRIORITY ORDER (what to optimize first):
-1. Hard skills match (25% weight) — most critical
-2. Exact keyword density (15% weight) — insert JD terms verbatim
-3. Job title alignment (12% weight) — mirror in summary
-4. Experience framing (20% weight) — scope, seniority, relevance
-5. Soft skills evidence (10% weight) — show don't tell, use bullets
+NEVER invent skills, technologies, projects, metrics, or dates not in the original CV.
+NEVER add numbers (requests/day, team size, revenue) that were not in the original CV.
+NEVER add company names or job titles that were not in the original CV.
+Only reword, reorder, and emphasize existing content.
 
-=== OUTPUT RULES (CRITICAL) ===
-- Output ONLY the full rewritten CV text, nothing else
-- No explanation, no commentary, no "Here is the tailored CV:" prefix
-- No markdown formatting (no **, no ##, no bullet symbols other than -)
-- Use plain dashes (-) for bullets
-- The output will be passed directly to a document generator — any extra text will corrupt the file"""
+=== OUTPUT RULE ===
+Your final message must be ONLY the plain text CV returned by finalize_cv.
+No explanation. No "Here is the tailored CV:". Just the CV text.
+The output goes directly into a document generator — any extra text corrupts the file."""
+
+_tailor_tools = [extract_jd_keywords, rewrite_cv_section, check_ats_score, finalize_cv]
+_tailor_agent = create_react_agent(llm, _tailor_tools)
 
 
 def tailor_cv_node(state):
@@ -75,18 +62,20 @@ def tailor_cv_node(state):
     ats_feedback  = state.get("ats_feedback", {})
     tailored_cvs  = []
 
-    print(f"\n[TAILOR] Processing {len(filtered_jobs)} job(s)...")
+    print(f"\n[TAILOR] Processing {len(filtered_jobs)} job(s) with agent...")
 
     for job in filtered_jobs:
         job_key      = f"{job['company']}_{job['title']}"
         job_feedback = ats_feedback.get(job_key, "")
 
         feedback_section = (
-            f"\n\nPREVIOUS ATTEMPT FEEDBACK — FIX THESE SPECIFIC ISSUES:\n{job_feedback}"
+            f"\n\nPREVIOUS ATTEMPT FEEDBACK — fix these specific issues:\n{job_feedback}"
             if job_feedback else ""
         )
 
-        human_message = f"""JOB POSTING:
+        user_message = f"""Tailor this CV for the job posting below.
+
+JOB POSTING:
 Title: {job['title']}
 Company: {job['company']}
 Location: {job['location']}
@@ -94,24 +83,23 @@ Employment Type: {job['employment_type']}
 Full Description:
 {job['description']}
 
-===
-
-CANDIDATE'S ORIGINAL CV (use this as your ONLY source of facts — do not invent anything not in this text):
+CANDIDATE'S ORIGINAL CV:
 {cv_text}{feedback_section}
 
-===
+Follow your 5-step process. Call finalize_cv last and output its result as your final message."""
 
-Rewrite the CV above to maximize ATS match for this job posting. Follow all rules in your instructions exactly."""
+        result = _tailor_agent.invoke(
+            {
+                "messages": [
+                    SystemMessage(content=TAILOR_AGENT_SYSTEM_PROMPT),
+                    HumanMessage(content=user_message),
+                ]
+            },
+            config={"recursion_limit": 30}
+        )
 
-        response = llm.invoke([
-            SystemMessage(content=TAILOR_SYSTEM_PROMPT),
-            HumanMessage(content=human_message)
-        ])
-
-        tailored_cvs.append({
-            "job": job,
-            "cv_text": response.content.strip()
-        })
-        print(f"  Tailored: {job['title']} @ {job['company']}")
+        final_cv = result["messages"][-1].content.strip()
+        tailored_cvs.append({"job": job, "cv_text": final_cv})
+        print(f"  Done: {job['title']} @ {job['company']}")
 
     return {"tailored_cvs": tailored_cvs}
