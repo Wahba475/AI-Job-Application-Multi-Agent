@@ -1,0 +1,62 @@
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: ['./index.html', './src/**/*.{js,jsx}'],
+  theme: {
+    extend: {
+      colors: {
+        ink: '#000000',
+        'ink-muted': '#5b5b5b',
+        'ink-subtle': '#808080',
+        'ink-faint': '#666666',
+        'surface-1': '#3c3c3c',
+        canvas: '#ffffff',
+        hairline: '#000000',
+        'mint-teal': '#3cd9b3',
+        surface: '#f9f9f9',
+        'surface-dim': '#dadada',
+        'on-surface': '#1b1b1b',
+        'on-surface-variant': '#4c4546',
+        'gradient-cream': '#ffedbe',
+        'gradient-rose': '#ffbcc3',
+        'gradient-mint': '#cdffea',
+        'gradient-sky': '#b9eeff',
+        'gradient-lavender': '#e7d4ff',
+        'gradient-lime': '#f1ffc9',
+        error: '#ba1a1a',
+        secondary: '#006b56',
+        'secondary-container': '#66fbd3',
+        outline: '#7e7576',
+        'outline-variant': '#cfc4c5',
+      },
+      fontFamily: {
+        display: ['"Bricolage Grotesque"', 'sans-serif'],
+        body: ['Inter', 'Helvetica', 'sans-serif'],
+      },
+      borderRadius: {
+        none: '0px',
+        md: '16px',
+        pill: '9999px',
+      },
+      spacing: {
+        xs: '4px',
+        sm: '14px',
+        base: '22px',
+        lg: '24px',
+        xl: '32px',
+        '2xl': '44px',
+        '3xl': '80px',
+      },
+      height: {
+        nav: '44px',
+        btn: '44px',
+      },
+      letterSpacing: {
+        caps: '1px',
+        tight: '-0.2px',
+        tighter: '-1.6px',
+        tightest: '-2.4px',
+      },
+    },
+  },
+  plugins: [],
+}
