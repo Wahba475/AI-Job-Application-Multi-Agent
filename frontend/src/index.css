@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Inter', Helvetica, sans-serif;
+    color: #000000;
+    background-color: #f9f9f9;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+}
+
+@layer utilities {
+  .hero-gradient {
+    background:
+      radial-gradient(circle at 15% 40%, #cdffea 0%, transparent 45%),
+      radial-gradient(circle at 85% 20%, #b9eeff 0%, transparent 40%),
+      radial-gradient(circle at 60% 80%, #ffedbe 0%, transparent 45%),
+      radial-gradient(circle at 40% 10%, #e7d4ff 0%, transparent 35%),
+      #f9f9f9;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
