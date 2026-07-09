@@ -3,6 +3,8 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 import os
 
+DOWNLOAD_BASE_URL = "http://localhost:8001/api/download"
+
 
 NAVY       = "1B2A4A"
 LIGHT_GRAY = "F5F5F5"
@@ -83,6 +85,14 @@ def build_xlsx(job_results: list[dict], output_path: str) -> str:
             link_cell.hyperlink = apply_link
             link_cell.value     = "Apply here"
             link_cell.font      = link_font
+
+        cv_path = job.get("cv_path", "")
+        if cv_path:
+            cv_filename       = os.path.basename(cv_path)
+            cv_cell           = ws.cell(row=row_idx, column=8)
+            cv_cell.hyperlink = f"{DOWNLOAD_BASE_URL}/{cv_filename}"
+            cv_cell.value     = "Download CV"
+            cv_cell.font      = link_font
 
         score      = job.get("ats_score", "N/A")
         score_cell = ws.cell(row=row_idx, column=7)

@@ -1,51 +1,73 @@
-from ..tools.llm_client import llm
+import re
+from ..tools.llm_client import llm, strip_think
 from langchain_core.messages import SystemMessage, HumanMessage
 
-FILTER_SYSTEM_PROMPT = """You are a strict job relevance classifier embedded in an automated job application pipeline.
+# One batched cloud call replaces N sequential local calls. Besides being
+# ~10x faster, it sees the candidate's actual CV — so it only passes jobs the
+# CV can honestly score well on, which is what keeps the tailor/validate
+# retry loop from spinning on impossible matches (e.g. a Rust job for a
+# Python-only candidate).
+MAX_JOBS = 5
+DESCRIPTION_SNIPPET_CHARS = 500
 
-CANDIDATE PROFILE:
-- Desired role: {job_title}
-- Experience level: {experience}
+FILTER_SYSTEM_PROMPT = """You are a strict job-matching specialist in an automated job application pipeline.
 
-YOUR TASK:
-Decide whether each job posting is worth applying to for this candidate.
+You will receive a candidate profile (desired role, experience level, and their actual CV) and a numbered list of job postings.
 
-CLASSIFICATION RULES:
-1. Title match: the job title must be the same role or a close equivalent (e.g. "Software Developer" counts for "Software Engineer", but "IT Support" does not).
-2. Seniority match: do not approve senior/lead/manager roles for junior or intern candidates. Do not discard mid-level roles for junior candidates if the description mentions entry-level welcome.
-3. Domain match: if the job description is clearly in an unrelated technical domain (e.g. embedded firmware when candidate wants web dev), mark not_relevant.
-4. Internships and entry-level positions are always relevant for intern or junior experience levels.
-5. When in doubt and the role is plausibly related, prefer relevant over not_relevant.
+Select the jobs genuinely worth applying to, judged by ALL of:
+1. Title match: same role or close equivalent to the desired role.
+2. Seniority match: no senior/lead/manager roles for junior candidates.
+3. CV support: the candidate's CV must plausibly cover the job's core stack and requirements. If the job's primary language/stack is absent from the CV (e.g. job needs Rust, CV is Python-only), it is NOT a match — a tailored CV could never honestly pass ATS for it.
+4. Internships/entry-level roles are always acceptable for intern or junior candidates.
 
 CRITICAL OUTPUT RULES:
-- Respond with EXACTLY one word, lowercase, no punctuation, no explanation.
-- The only valid outputs are: relevant   or   not_relevant
-- Any other output will crash the pipeline."""
+Respond with EXACTLY one line, nothing else:
+MATCHES: 3, 7, 12
+- Comma-separated indices of the matching jobs, best match first, maximum {max_jobs}.
+- If nothing matches, respond exactly: MATCHES: none"""
 
 
 def filter_relevance_node(state):
+    jobs       = state["jobs"]
     job_title  = state["job_title"]
     experience = state["experience"]
+    cv_text    = state["cv_text"]
 
-    system_prompt = FILTER_SYSTEM_PROMPT.format(job_title=job_title, experience=experience)
-    relevant = []
+    if not jobs:
+        return {"filtered_jobs": []}
 
-    for job in state["jobs"]:
-        human_message = f"""JOB POSTING TO CLASSIFY:
-Title: {job['title']}
-Company: {job['company']}
-Employment Type: {job['employment_type']}
-Description (first 600 characters):
-{job['description'][:600]}
+    job_lines = []
+    for i, job in enumerate(jobs):
+        snippet = job["description"][:DESCRIPTION_SNIPPET_CHARS].replace("\n", " ")
+        job_lines.append(f"[{i}] {job['title']} @ {job['company']} ({job['employment_type']}): {snippet}")
 
-Is this job relevant for the candidate?"""
+    human_message = f"""CANDIDATE PROFILE:
+- Desired role: {job_title}
+- Experience level: {experience}
+- CV:
+{cv_text}
 
+JOB POSTINGS:
+{chr(10).join(job_lines)}
+
+Which jobs are worth applying to?"""
+
+    print(f"\n[FILTER] Matching {len(jobs)} job(s) against CV in one batched call...")
+
+    try:
         response = llm.invoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=human_message)
+            SystemMessage(content=FILTER_SYSTEM_PROMPT.format(max_jobs=MAX_JOBS)),
+            HumanMessage(content=human_message),
         ])
+        # Strip leaked reasoning first — numbers inside <think> text would
+        # otherwise be misread as job indices.
+        content = strip_think(response.content)
+        match = re.search(r"MATCHES:\s*(.+)", content, re.IGNORECASE)
+        indices = [int(m) for m in re.findall(r"\d+", match.group(1) if match else content)]
+        relevant = [jobs[i] for i in indices if 0 <= i < len(jobs)]
+    except Exception as e:
+        print(f"[FILTER] Batched filter failed ({e}), falling back to first {MAX_JOBS} jobs")
+        relevant = jobs
 
-        if response.content.strip().lower() == "relevant":
-            relevant.append(job)
-
-    return {"filtered_jobs": relevant[:5]}
+    print(f"[FILTER] Selected {min(len(relevant), MAX_JOBS)} job(s)")
+    return {"filtered_jobs": relevant[:MAX_JOBS]}

@@ -68,7 +68,7 @@ export default function LandingPage() {
               <div
                 key={i}
                 className="bg-canvas p-8"
-                data-aos="fade-up"
+                data-aos="fade"
                 data-aos-delay={i * 80}
               >
                 <div className="w-10 h-10 bg-ink flex items-center justify-center mb-6">
@@ -100,7 +100,7 @@ export default function LandingPage() {
               <div
                 key={i}
                 className="bg-canvas p-8"
-                data-aos="fade-up"
+                data-aos="fade"
                 data-aos-delay={i * 60}
               >
                 <feat.icon size={20} className="text-mint-teal mb-4" />

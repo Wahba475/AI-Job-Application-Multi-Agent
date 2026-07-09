@@ -1,17 +1,25 @@
 import time
 from langchain_core.tools import tool
 from langchain_core.messages import SystemMessage, HumanMessage
-from .llm_client import llm
+from .llm_client import llm, strip_think
+
+# Transient statuses worth retrying: 429 = our rate limit, 503/ResourceExhausted
+# = the shared free NVIDIA endpoint is congested by other tenants.
+_RETRYABLE = ("429", "503", "ResourceExhausted")
 
 
 def _invoke(messages, retries=4):
     for i in range(retries):
         try:
-            return llm.invoke(messages)
+            response = llm.invoke(messages)
+            # Reasoning model: strip leaked <think> chain-of-thought so it
+            # never ends up inside CV sections or keyword lists.
+            response.content = strip_think(response.content)
+            return response
         except Exception as e:
-            if "429" in str(e) and i < retries - 1:
+            if any(code in str(e) for code in _RETRYABLE) and i < retries - 1:
                 wait = 5 * (i + 1)
-                print(f"[TOOL] Rate limit, retrying in {wait}s...")
+                print(f"[TOOL] Transient LLM error, retrying in {wait}s...")
                 time.sleep(wait)
             else:
                 raise
