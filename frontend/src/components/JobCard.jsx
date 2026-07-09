@@ -21,9 +21,16 @@ export default function JobCard({ job, onPreview }) {
           <h3 className="font-display font-semibold text-lg text-ink leading-tight">{job.title}</h3>
           <p className="font-body text-sm font-medium text-ink-muted mt-0.5">{job.company}</p>
         </div>
-        <span className={`flex-shrink-0 inline-flex items-center px-3 py-1 rounded-pill text-xs font-body font-medium ${scoreBadge}`}>
-          ATS {score}%
-        </span>
+        <div className="flex-shrink-0 flex flex-col items-end gap-1">
+          <span className={`inline-flex items-center px-3 py-1 rounded-pill text-xs font-body font-medium ${scoreBadge}`}>
+            ATS {score}%
+          </span>
+          {score < 70 && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-pill text-[10px] font-body font-medium bg-surface-dim text-ink-muted uppercase tracking-caps">
+              Stretch role
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-3 mb-6">
@@ -38,6 +45,12 @@ export default function JobCard({ job, onPreview }) {
           </span>
         )}
       </div>
+
+      {score < 70 && job.gaps && (
+        <p className="font-body text-xs text-ink-muted mb-6 -mt-3">
+          <span className="font-medium text-ink">Missing from your CV:</span> {job.gaps}
+        </p>
+      )}
 
       <div className="flex flex-wrap gap-2">
         {job.apply_link && (

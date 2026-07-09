@@ -1,6 +1,17 @@
 import os
+import re
 from ..tools.cv_generator import generate_cv_docx
 from ..tools.spreadsheet_builder import build_xlsx
+
+
+def cv_filename_for(job) -> str:
+    """Canonical CV filename for a job. Strips every character Windows
+    forbids in filenames (< > : \" / \\ | ? *) plus whitespace. Used by both
+    the file writer here and the download-link builder in the backend — they
+    MUST agree or download links 404."""
+    raw  = f"CV_{job['company']}_{job['title']}"
+    safe = re.sub(r'[<>:"/\\|?*\s]+', "_", raw).strip("_")
+    return f"{safe}.docx"
 
 
 def build_deliverable_node(state):
@@ -17,8 +28,7 @@ def build_deliverable_node(state):
 
     for item in approved_cvs:
         job      = item["job"]
-        filename = f"CV_{job['company']}_{job['title']}.docx"
-        filename = filename.replace(" ", "_").replace("/", "_").replace("\\", "_")
+        filename = cv_filename_for(job)
         path     = f"outputs/CVs/{filename}"
 
         generate_cv_docx(item["cv_text"], path, "")

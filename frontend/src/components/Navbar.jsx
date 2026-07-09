@@ -27,7 +27,7 @@ export default function Navbar() {
 
         <Link
           to="/app"
-          className="inline-flex items-center h-btn px-5 bg-ink text-canvas font-body font-medium text-sm rounded-pill hover:bg-on-surface transition-colors"
+          className="inline-flex items-center h-9 px-4 bg-ink text-canvas font-body font-medium text-sm rounded-pill hover:bg-on-surface transition-colors flex-shrink-0 whitespace-nowrap"
         >
           Try Now
         </Link>

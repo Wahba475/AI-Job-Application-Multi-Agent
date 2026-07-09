@@ -190,7 +190,6 @@ function ResultsState({ results, onReset }) {
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function AppPage() {
   const { results, loading, currentStep, runPipeline, setResults } = usePipeline()
-  const [pageState, setPageState] = useState('form')
 
   const handleSubmit = async ({ jobTitle, location, experience, file }) => {
     const formData = new FormData()
@@ -199,21 +198,18 @@ export default function AppPage() {
     formData.append('experience', experience)
     formData.append('cv_file', file)
 
-    setPageState('loading')
     try {
       await runPipeline(formData)
-      setPageState('results')
     } catch {
-      setPageState('form')
+      // error toast already shown by the pipeline context
     }
   }
 
   const handleReset = () => {
     setResults(null)
-    setPageState('form')
   }
 
-  if (pageState === 'loading' || loading) return <LoadingState currentStep={currentStep} />
-  if (pageState === 'results' && results) return <ResultsState results={results} onReset={handleReset} />
+  if (loading) return <LoadingState currentStep={currentStep} />
+  if (results) return <ResultsState results={results} onReset={handleReset} />
   return <FormState onSubmit={handleSubmit} />
 }
