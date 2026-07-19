@@ -2,6 +2,7 @@
 Parse/validate the request, call the service, shape the response. No business
 logic here — that lives in services/auth_service.py.
 """
+from backend.services import auth_service
 from fastapi import HTTPException, Depends
 from pydantic import BaseModel, EmailStr, Field
 
@@ -24,7 +25,7 @@ class LoginBody(BaseModel):
 # ── handlers ───────────────────────────────────────────────
 async def register(body: RegisterBody):
     try:
-        return register_user(body.email, body.password, body.name)
+        return auth_service.register_user(body.email, body.password, body.name)
     except AuthError as e:
         raise HTTPException(status_code=e.status, detail=e.message)
 
