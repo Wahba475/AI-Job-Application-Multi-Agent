@@ -1,50 +1,66 @@
 """Supabase Storage helpers.
 
-HOW STORAGE WORKS (the mental model you asked about):
-  - A bucket ("deliverables") holds arbitrary files — .docx, .xlsx, anything.
-  - Every file lives at a PATH inside the bucket. We namespace by user + run:
-        deliverables/{user_id}/{run_id}/CV_Company_Title.docx
-        deliverables/{user_id}/{run_id}/jobs.xlsx
-    so each user's files are grouped and a whole run is easy to find/delete.
-  - Upload:  storage.from_(bucket).upload(path, bytes)
-  - Because the bucket is PRIVATE, files aren't public. To let a user download,
-    we mint a SIGNED URL — a temporary link (expires) that grants read access
-    to exactly that one object. We store that URL in the DB row.
+Responsibilities (and ONLY these):
+  1. Upload a file  → returns (bucket, path).  No signed URL is created here.
+  2. Delete a file  → removes the object from the bucket.
+  3. Generate a signed URL → called at download-time only; result is NEVER stored.
 
-CONNECTING TO THE SCHEMA:
-  upload_deliverable() returns the signed URL. The pipeline saves it into the
-  `runs` row: the spreadsheet URL in `spreadsheet_url`, and each CV URL inside
-  the `jobs` JSONB array (job["cv_url"]). That's the whole link: DB row → URL →
-  file in the bucket.
+Design rule: this service knows nothing about the history table, user records, or
+any other business logic.  It only speaks to Supabase Storage.
 """
 import os
 from db.supabase_client import get_supabase
 
 BUCKET = os.getenv("SUPABASE_BUCKET", "deliverables")
 
-# Signed URLs live for 7 days — long enough for a user to come back to their
-# history and re-download, short enough that a leaked link eventually dies.
-SIGNED_URL_TTL_SECONDS = 7 * 24 * 3600
+# Content-type constants reused by callers.
+DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+# Signed URLs are short-lived (5 min) — they are never persisted.
+_SIGNED_URL_TTL_SECONDS = 5 * 60
 
 
-def upload_deliverable(user_id: str, run_id: str, filename: str, data: bytes,
-                       content_type: str) -> str:
-    """Upload one file to deliverables/{user_id}/{run_id}/{filename} and return
-    a signed download URL. Overwrites if the same path already exists."""
-    sb = get_supabase()
+def upload_file(
+    user_id: str,
+    run_id: str,
+    filename: str,
+    data: bytes,
+    content_type: str,
+) -> tuple[str, str]:
+    """Upload *data* to ``{bucket}/{user_id}/{run_id}/{filename}``.
+
+    Returns ``(bucket, path)`` — the caller is responsible for persisting
+    these two values in the database.  No signed URL is created.
+    """
+    sb   = get_supabase()
     path = f"{user_id}/{run_id}/{filename}"
-    store = sb.storage.from_(BUCKET)
 
-    store.upload(
+    sb.storage.from_(BUCKET).upload(
         path=path,
         file=data,
         file_options={"content-type": content_type, "upsert": "true"},
     )
 
-    signed = store.create_signed_url(path, SIGNED_URL_TTL_SECONDS)
-    # supabase-py returns {"signedURL": "..."} (or signed_url on some versions)
+    return BUCKET, path
+
+
+def generate_signed_url(bucket: str, path: str, ttl_seconds: int = _SIGNED_URL_TTL_SECONDS) -> str:
+    """Create a *temporary* signed download URL for an existing object.
+
+    This is the ONLY place signed URLs are created.  They are returned to the
+    caller and must never be stored in the database.
+    """
+    sb     = get_supabase()
+    signed = sb.storage.from_(bucket).create_signed_url(path, ttl_seconds)
+    # supabase-py v1 returns {"signedURL": "..."}, v2 returns {"signed_url": "..."}
     return signed.get("signedURL") or signed.get("signed_url", "")
 
 
-DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+def delete_file(bucket: str, path: str) -> None:
+    """Remove a single object from storage.
+
+    If the object does not exist the call is silently treated as a no-op so
+    callers do not need to guard against double-deletes.
+    """
+    get_supabase().storage.from_(bucket).remove([path])

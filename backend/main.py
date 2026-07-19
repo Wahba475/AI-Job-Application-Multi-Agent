@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routes.pipeline_router import router as pipeline_router
 from routes.auth_router import router as auth_router
+from routes.history_router import router as history_router
 
 app = FastAPI(title="ApplyAI — Job Application Agent API")
 
@@ -27,4 +28,5 @@ app.add_middleware(
 )
 
 app.include_router(auth_router, prefix="/api")       # /api/auth/*
-app.include_router(pipeline_router, prefix="/api")   # /api/run-pipeline, /api/history, ...
+app.include_router(pipeline_router, prefix="/api")   # /api/run-pipeline, /api/status/*, ...
+app.include_router(history_router, prefix="/api")    # /api/history/*
