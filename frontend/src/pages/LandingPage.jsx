@@ -37,7 +37,7 @@ export default function LandingPage() {
             </p>
             <div className="flex flex-wrap gap-4">
               <Link
-                to="/app"
+                to="/register"
                 className="inline-flex items-center h-btn px-6 bg-ink text-canvas font-body font-medium text-sm rounded-pill hover:bg-on-surface transition-colors"
               >
                 Start for free

@@ -1,7 +1,9 @@
 import { MapPin, Briefcase, ExternalLink, Eye, Download } from 'lucide-react'
-import { getDownloadUrl } from '../services/api'
+import { usePipeline } from '../context/PipelineContext'
 
 export default function JobCard({ job, onPreview }) {
+  const { downloadFile } = usePipeline()
+
   const score = typeof job.ats_score === 'number' ? job.ats_score : parseInt(job.ats_score) || 0
 
   const scoreBadge =
@@ -72,13 +74,13 @@ export default function JobCard({ job, onPreview }) {
           <Eye size={13} /> Preview CV
         </button>
 
-        <a
-          href={getDownloadUrl(job.cv_filename)}
-          download={job.cv_filename}
+        <button
+          type="button"
+          onClick={() => downloadFile(job.cv_filename)}
           className="inline-flex items-center gap-1.5 h-9 px-4 border border-hairline text-ink font-body text-sm font-medium rounded-pill hover:bg-surface-dim transition-colors"
         >
           <Download size={13} /> Download CV
-        </a>
+        </button>
       </div>
     </div>
   )

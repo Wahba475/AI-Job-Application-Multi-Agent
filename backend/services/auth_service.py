@@ -6,25 +6,30 @@ Controllers call these functions; they don't touch bcrypt/JWT/DB directly.
 """
 import os
 import datetime as dt
-from passlib.context import CryptContext
+
+import bcrypt
 from jose import jwt, JWTError
 
 from db.supabase_client import get_supabase
 
-# bcrypt for password hashing — plaintext passwords are NEVER stored.
-_pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
+# bcrypt directly — passlib+bcrypt>=4.1 crashes on backend init (72-byte probe).
 _ALGO = "HS256"
 _TOKEN_TTL_HOURS = 24 * 7  # token valid for 1 week
 
 
 # ── password + token primitives ────────────────────────────
 def hash_password(password: str) -> str:
-    return _pwd.hash(password)
+    # bcrypt hard-caps at 72 bytes
+    raw = password.encode("utf-8")[:72]
+    return bcrypt.hashpw(raw, bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    return _pwd.verify(password, password_hash)
+    raw = password.encode("utf-8")[:72]
+    try:
+        return bcrypt.checkpw(raw, password_hash.encode("utf-8"))
+    except (ValueError, TypeError):
+        return False
 
 
 def _secret() -> str:
@@ -65,7 +70,11 @@ class AuthError(Exception):
 
 
 def register_user(email: str, password: str, name: str | None) -> dict:
-    """Create a user (email must be unique), return {token, user}."""
+    """Create a user (email must be unique), return {token, user}.
+
+    Live `users` columns: id, email, password (bcrypt hash), created_at.
+    `name` is accepted for API compatibility and echoed in the response only.
+    """
     sb = get_supabase()
     email = email.lower()
 
@@ -74,8 +83,7 @@ def register_user(email: str, password: str, name: str | None) -> dict:
 
     inserted = sb.table("users").insert({
         "email": email,
-        "password_hash": hash_password(password),
-        "name": name,
+        "password": hash_password(password),
     }).execute()
     user = inserted.data[0]
 
@@ -89,9 +97,13 @@ def login_user(email: str, password: str) -> dict:
     email = email.lower()
 
     res = sb.table("users").select("*").eq("email", email).execute()
-    if not res.data or not verify_password(password, res.data[0]["password_hash"]):
+    if not res.data:
         raise AuthError(401, "Invalid email or password")
 
-    user = res.data[0]
-    token = create_token(user["id"], email)
-    return {"token": token, "user": {"id": user["id"], "email": email, "name": user.get("name")}}
+    row = res.data[0]
+    stored = row.get("password") or row.get("password_hash") or ""
+    if not verify_password(password, stored):
+        raise AuthError(401, "Invalid email or password")
+
+    token = create_token(row["id"], email)
+    return {"token": token, "user": {"id": row["id"], "email": email, "name": row.get("name")}}

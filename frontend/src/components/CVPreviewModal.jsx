@@ -1,8 +1,10 @@
 import { useEffect } from 'react'
 import { X, Download } from 'lucide-react'
-import { getDownloadUrl } from '../services/api'
+import { usePipeline } from '../context/PipelineContext'
 
 export default function CVPreviewModal({ isOpen, onClose, jobData }) {
+  const { downloadFile } = usePipeline()
+
   useEffect(() => {
     if (!isOpen) return
     const handler = (e) => { if (e.key === 'Escape') onClose() }
@@ -63,13 +65,13 @@ export default function CVPreviewModal({ isOpen, onClose, jobData }) {
           >
             Close
           </button>
-          <a
-            href={getDownloadUrl(jobData.cv_filename)}
-            download={jobData.cv_filename}
+          <button
+            type="button"
+            onClick={() => downloadFile(jobData.cv_filename)}
             className="inline-flex items-center gap-2 h-btn px-5 bg-ink text-canvas font-body text-sm font-medium rounded-pill hover:bg-on-surface transition-colors"
           >
             <Download size={14} /> Download CV
-          </a>
+          </button>
         </div>
       </div>
     </div>

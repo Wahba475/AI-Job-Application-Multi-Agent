@@ -8,7 +8,6 @@ import FileUpload from '../components/FileUpload'
 import LoadingSteps from '../components/LoadingSteps'
 import JobCard from '../components/JobCard'
 import CVPreviewModal from '../components/CVPreviewModal'
-import { getDownloadUrl } from '../services/api'
 
 const EXPERIENCE_OPTIONS = [
   'Entry Level (0–2 years)',
@@ -128,6 +127,7 @@ function LoadingState({ currentStep }) {
 // ── Results ──────────────────────────────────────────────────────────────────
 function ResultsState({ results, onReset }) {
   const [previewJob, setPreviewJob] = useState(null)
+  const { downloadFile } = usePipeline()
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-16">
@@ -146,13 +146,13 @@ function ResultsState({ results, onReset }) {
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
-          <a
-            href={getDownloadUrl(results.spreadsheet_download)}
-            download
+          <button
+            type="button"
+            onClick={() => downloadFile(results.spreadsheet_download)}
             className="inline-flex items-center gap-2 h-btn px-5 border border-hairline text-ink font-body text-sm font-medium rounded-pill hover:bg-surface-dim transition-colors"
           >
             <Download size={14} /> Download Spreadsheet
-          </a>
+          </button>
           <button
             onClick={onReset}
             className="inline-flex items-center gap-2 h-btn px-5 bg-ink text-canvas font-body text-sm font-medium rounded-pill hover:bg-on-surface transition-colors"

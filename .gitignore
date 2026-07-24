@@ -1,7 +1,36 @@
+# ── Secrets & environment ──────────────────────────────
 .env
+frontend/.env
+*.env.local
+
+# ── Python ─────────────────────────────────────────────
 venv/
-node_modules/
 __pycache__/
 *.pyc
+
+# ── Node / frontend build ──────────────────────────────
+node_modules/
+dist/
+frontend/dist/
+
+# ── Generated pipeline output ──────────────────────────
 outputs/
 temp/
+
+# ── Editor / tooling / agent config (not part of the app) ──
+.claude/
+.mcp.json
+.playwright-mcp/
+.vscode/
+.idea/
+
+# ── Local logs & one-off test artifacts ────────────────
+*.log
+backend_stderr.log
+backend_stdout.log
+e2e_playwright.py
+e2e_*.png
+e2e_*.json
+extra_results.json
+verification_suite.py
+verification_results.json
