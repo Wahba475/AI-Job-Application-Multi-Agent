@@ -1,11 +1,16 @@
-"""Auth ROUTER — maps URLs to controller handlers (same role as your Node
-Routers/ files: router.post('/register', register)).
+"""Auth ROUTER — maps URLs to controller handlers.
+
+Login/register are public (IP rate-limited).
+/me is protected with JWT.
 """
-from fastapi import APIRouter
-from controllers.auth_controller import register, login, me
+from fastapi import APIRouter, Depends
+
+from controllers.auth_controller import login, me, register
+from middleware.auth_middleware import get_current_user
+from middleware.rate_limiter_middleware import AuthLimit
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-router.post("/register")(register)   # POST /api/auth/register
-router.post("/login")(login)         # POST /api/auth/login
-router.get("/me")(me)                # GET  /api/auth/me   (protected)
+router.post("/register", dependencies=[Depends(AuthLimit)])(register)
+router.post("/login", dependencies=[Depends(AuthLimit)])(login)
+router.get("/me", dependencies=[Depends(get_current_user)])(me)

@@ -1,10 +1,30 @@
 import { createContext, useContext, useState, useEffect, useRef } from 'react'
+import axios from 'axios'
 import toast from 'react-hot-toast'
-import { startPipeline, getPipelineStatus } from '../services/api'
 
 const PipelineContext = createContext()
 const JOB_ID_KEY = 'applyai_job_id'
 const POLL_INTERVAL = 3000
+
+const apiBase = () => `${import.meta.env.VITE_API_URL}/api`
+
+const authHeaders = () => {
+  const token = localStorage.getItem('token')
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+const handleAuthError = (error) => {
+  const status = error.response?.status
+  if (status === 401) {
+    localStorage.removeItem('token')
+    localStorage.removeItem('user')
+    if (!['/login', '/register'].includes(window.location.pathname)) {
+      window.location.assign('/login')
+    }
+  } else if (status === 429) {
+    toast.error(error.response?.data?.detail || 'Too many requests. Please wait a moment.')
+  }
+}
 
 export const usePipeline = () => {
   const context = useContext(PipelineContext)
@@ -27,7 +47,9 @@ export const PipelineProvider = ({ children }) => {
   const pollJob = (jobId, stepTimers) => {
     pollTimer.current = setInterval(async () => {
       try {
-        const job = await getPipelineStatus(jobId)
+        const { data: job } = await axios.get(`${apiBase()}/status/${jobId}`, {
+          headers: authHeaders(),
+        })
         if (job.status === 'running') return
 
         clearInterval(pollTimer.current)
@@ -43,16 +65,18 @@ export const PipelineProvider = ({ children }) => {
         } else {
           toast.error(job.error || 'Pipeline failed. Please try again.')
         }
-      } catch {
+      } catch (error) {
         clearInterval(pollTimer.current)
         localStorage.removeItem(JOB_ID_KEY)
         setLoading(false)
-        toast.error('Lost connection to the pipeline run.')
+        handleAuthError(error)
+        if (error.response?.status !== 429 && error.response?.status !== 401) {
+          toast.error('Lost connection to the pipeline run.')
+        }
       }
     }, POLL_INTERVAL)
   }
 
-  // Resume an in-flight job after a page refresh instead of losing track of it
   useEffect(() => {
     const savedJobId = localStorage.getItem(JOB_ID_KEY)
     if (savedJobId) {
@@ -67,10 +91,6 @@ export const PipelineProvider = ({ children }) => {
     setCurrentStep(0)
     setResults(null)
 
-    // Capped at step 3 ("Validating ATS scores") — that step can loop through
-    // several retry rounds and take minutes, so it's the honest place to sit
-    // rather than falsely advancing to "Building deliverables" (near-instant)
-    // while the backend is still mid-retry.
     const stepTimers = [
       setTimeout(() => setCurrentStep(1), 5000),
       setTimeout(() => setCurrentStep(2), 15000),
@@ -78,19 +98,50 @@ export const PipelineProvider = ({ children }) => {
     ]
 
     try {
-      const { job_id } = await startPipeline(formData)
-      localStorage.setItem(JOB_ID_KEY, job_id)
-      pollJob(job_id, stepTimers)
+      const { data } = await axios.post(`${apiBase()}/run-pipeline`, formData, {
+        headers: {
+          ...authHeaders(),
+          'Content-Type': 'multipart/form-data',
+        },
+      })
+      localStorage.setItem(JOB_ID_KEY, data.job_id)
+      pollJob(data.job_id, stepTimers)
     } catch (err) {
       stepTimers.forEach(clearTimeout)
       setLoading(false)
-      toast.error(err?.response?.data?.detail || 'Pipeline failed. Please try again.')
+      handleAuthError(err)
+      if (err.response?.status !== 429 && err.response?.status !== 401) {
+        toast.error(err?.response?.data?.detail || 'Pipeline failed. Please try again.')
+      }
       throw err
     }
   }
 
+  /** Authenticated file download (Bearer via header — not exposed in the URL). */
+  const downloadFile = async (filename) => {
+    try {
+      const response = await axios.get(`${apiBase()}/download/${filename}`, {
+        headers: authHeaders(),
+        responseType: 'blob',
+      })
+      const url = URL.createObjectURL(response.data)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      handleAuthError(error)
+      if (error.response?.status !== 429 && error.response?.status !== 401) {
+        toast.error('Download failed.')
+      }
+    }
+  }
+
   return (
-    <PipelineContext.Provider value={{ results, loading, currentStep, runPipeline, setResults }}>
+    <PipelineContext.Provider
+      value={{ results, loading, currentStep, runPipeline, setResults, downloadFile }}
+    >
       {children}
     </PipelineContext.Provider>
   )

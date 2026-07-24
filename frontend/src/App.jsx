@@ -6,9 +6,12 @@ import 'aos/dist/aos.css'
 
 import { PipelineProvider } from './context/PipelineContext'
 import Layout from './components/Layout'
+import PrivateRoute from './components/PrivateRoute'
 import LandingPage from './pages/LandingPage'
 import AppPage from './pages/AppPage'
 import HistoryPage from './pages/HistoryPage'
+import LoginPage from './pages/LoginPage'
+import RegisterPage from './pages/RegisterPage'
 
 export default function App() {
   useEffect(() => {
@@ -31,8 +34,24 @@ export default function App() {
           }
         >
           <Route path="/" element={<LandingPage />} />
-          <Route path="/app" element={<AppPage />} />
-          <Route path="/history" element={<HistoryPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route
+            path="/app"
+            element={
+              <PrivateRoute>
+                <AppPage />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/history"
+            element={
+              <PrivateRoute>
+                <HistoryPage />
+              </PrivateRoute>
+            }
+          />
         </Route>
       </Routes>
       <Toaster
