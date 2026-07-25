@@ -8,6 +8,8 @@ tiny, and fails open when Redis is down.
 from __future__ import annotations
 
 import logging
+import time
+from threading import Lock
 
 from fastapi import HTTPException, Request, Response
 from starlette.status import HTTP_429_TOO_MANY_REQUESTS
@@ -20,6 +22,35 @@ from db.redis_client import get_redis, is_redis_available
 from services.auth_service import decode_token
 
 logger = logging.getLogger("applyai.ratelimit")
+
+# ── In-memory fallback (used when Redis is unavailable) ─────────────────────
+# Redis is preferred so limits hold across multiple backend instances. But if
+# Redis is down we must NOT fail fully open (that disables brute-force / abuse
+# protection). This per-process fixed-window counter still enforces the limit
+# for a single instance — the common case for this app.
+_MEM: dict[str, tuple[int, float]] = {}   # key -> (count, window_start_epoch)
+_MEM_LOCK = Lock()
+
+
+def _enforce_memory(key: str, limit: int, window: int) -> None:
+    now = time.time()
+    with _MEM_LOCK:
+        # Opportunistic prune so the dict can't grow unbounded.
+        if len(_MEM) > 10_000:
+            for k, (_, start) in list(_MEM.items()):
+                if now - start >= window:
+                    _MEM.pop(k, None)
+
+        count, start = _MEM.get(key, (0, now))
+        if now - start >= window:          # window elapsed → reset
+            count, start = 0, now
+        if count >= limit:
+            raise HTTPException(
+                status_code=HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many requests. Please try again later.",
+                headers={"Retry-After": str(int(window - (now - start)))},
+            )
+        _MEM[key] = (count + 1, start)
 
 
 def _client_ip(request: Request) -> str:
@@ -44,10 +75,11 @@ def _identity(request: Request) -> str:
 
 async def _enforce(bucket: str, identity: str, limit: int, window: int):
     """Atomic Redis GET → INCR → EXPIRE fixed-window limiter. Fails open."""
+    key = f"{REDIS_KEY_PREFIX}:{bucket}:{identity}"
     client = get_redis()
     if client is None or not is_redis_available():
+        _enforce_memory(key, limit, window)   # Redis down → per-process fallback
         return
-    key = f"{REDIS_KEY_PREFIX}:{bucket}:{identity}"
     try:
         current = await client.get(key)
         if current is not None and int(current) >= limit:

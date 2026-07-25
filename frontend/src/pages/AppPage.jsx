@@ -128,7 +128,7 @@ function LoadingState({ currentStep }) {
         Processing your application
       </h2>
       <p className="font-body text-sm text-ink-muted mb-1">
-        This usually takes 2–4 minutes. Don't close this tab — you can safely refresh.
+        This usually takes about a minute. Don't close this tab — you can safely refresh.
       </p>
       <p className="font-body text-sm font-medium text-secondary mb-10">{label}…</p>
       <LoadingSteps currentStep={currentStep} />

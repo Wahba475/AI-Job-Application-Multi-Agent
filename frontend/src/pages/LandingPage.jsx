@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { Search, Filter, FileText, ShieldCheck, Zap, Target, Clock, Download } from 'lucide-react'
+import { useAuth } from '../context/AuthContext'
 
 const STEPS = [
   { icon: Search, title: 'Search', desc: 'Scans job boards for roles matching your title, location, and experience level.' },
@@ -18,6 +19,11 @@ const FEATURES = [
 ]
 
 export default function LandingPage() {
+  const { isLoggedIn } = useAuth()
+  // Logged-in users skip the auth wall — CTAs go straight to the form.
+  const ctaTo = isLoggedIn ? '/app' : '/register'
+  const heroCta = isLoggedIn ? 'Go to workspace' : 'Start for free'
+  const bottomCta = isLoggedIn ? 'Open workspace' : 'Get started now'
   return (
     <>
       {/* Hero */}
@@ -37,10 +43,10 @@ export default function LandingPage() {
             </p>
             <div className="flex flex-wrap gap-4">
               <Link
-                to="/register"
+                to={ctaTo}
                 className="inline-flex items-center h-btn px-6 bg-ink text-canvas font-body font-medium text-sm rounded-pill hover:bg-on-surface transition-colors"
               >
-                Start for free
+                {heroCta}
               </Link>
               <a
                 href="#how-it-works"
@@ -118,10 +124,10 @@ export default function LandingPage() {
             Upload your CV once and let ApplyAI do the rest.
           </p>
           <Link
-            to="/app"
+            to={ctaTo}
             className="inline-flex items-center h-btn px-8 bg-mint-teal text-ink font-body font-medium text-sm rounded-pill hover:opacity-90 transition-opacity"
           >
-            Get started now
+            {bottomCta}
           </Link>
         </div>
       </section>

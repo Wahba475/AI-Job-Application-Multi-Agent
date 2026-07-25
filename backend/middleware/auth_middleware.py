@@ -24,7 +24,7 @@ def get_current_user(authorization: str = Header(default="")) -> dict:
 
     token = authorization.split(" ", 1)[1].strip()
     payload = decode_token(token)
-    if not payload:
+    if not payload or not payload.get("sub"):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     return {"id": payload["sub"], "email": payload.get("email", "")}
