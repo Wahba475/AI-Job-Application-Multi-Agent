@@ -4,11 +4,12 @@ from ..tools.cv_generator import generate_cv_docx
 
 
 def cv_filename_for(job) -> str:
-    """Canonical CV filename for a job. Strips characters Windows forbids in
-    filenames (< > : \" / \\ | ? *) plus whitespace."""
+    """Canonical CV filename for a job — safe for both Windows AND Supabase
+    Storage keys. Supabase rejects non-ASCII/punctuation (e.g. en-dash "–"),
+    so we keep ONLY [A-Za-z0-9._-] and collapse everything else to "_"."""
     raw  = f"CV_{job['company']}_{job['title']}"
-    safe = re.sub(r'[<>:"/\\|?*\s]+', "_", raw).strip("_")
-    return f"{safe}.docx"
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", raw).strip("_")
+    return f"{safe or 'CV'}.docx"
 
 
 def run_dir(run_id: str) -> str:

@@ -1,8 +1,9 @@
-import time
+import os
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import SystemMessage, HumanMessage
-from ..tools.llm_client import AGENT_MODELS, strip_think
+from ..tools.llm_client import AGENT_MODELS, strip_think, PROVIDER_ORDER
 from ..tools.tailor_tools import (
     extract_jd_keywords,
     rewrite_cv_section,
@@ -12,23 +13,26 @@ from ..tools.tailor_tools import (
 
 logger = logging.getLogger("applyai.tailor")
 
-# ── Configuration ──────────────────────────────────────────
-# Jobs are tailored SEQUENTIALLY, not concurrently. On free-tier LLMs, firing
-# several ReAct agents at once instantly blows the token-per-minute limit, so
-# every job after the first 429s and silently falls back to the ORIGINAL CV —
-# which is exactly why all tailored CVs used to come out identical. Running one
-# job at a time with a short gap keeps us under the rate limit so each job is
-# actually tailored to its own job description.
-DELAY_BETWEEN_JOBS = 3  # seconds
+# ── Concurrency ────────────────────────────────────────────
+# On a high-TPM provider (OpenAI: 200k TPM) we tailor jobs in parallel for speed.
+# On a free provider (Groq: 8k TPM) parallel agents instantly blow the token
+# limit, so every job but the first 429s and falls back to the ORIGINAL CV —
+# which is what made all tailored CVs look identical. So: parallel when the
+# primary provider is OpenAI, otherwise 1-at-a-time.
+#   TAILOR_CONCURRENCY env overrides the auto choice.
+_auto = 4 if PROVIDER_ORDER and PROVIDER_ORDER[0] == "openai" else 1
+MAX_CONCURRENT_JOBS = int(os.getenv("TAILOR_CONCURRENCY", str(_auto)))
 
 # ── System prompt for the ReAct agent ──────────────────────
-TAILOR_SYSTEM_PROMPT = """You are a CV tailoring specialist. Use your 4 tools in this order:
+TAILOR_SYSTEM_PROMPT = """You are a CV tailoring specialist. Work efficiently in this order:
 
-1. extract_jd_keywords(jd_text) — extract skills from job description
-2. check_ats_score(cv_text, jd_text) — find gaps in current CV
-3. rewrite_cv_section(...) — fix each section that has gaps
-4. check_ats_score(...) — check again, if score >= 70 go to step 5
-5. finalize_cv(...) — assemble final CV, output ONLY the result
+1. extract_jd_keywords(jd_text) — extract the skills this job wants
+2. rewrite_cv_section(...) — rewrite each section that has gaps, weaving in the
+   job's keywords wherever the original CV honestly supports them
+3. finalize_cv(...) — assemble the final CV and output ONLY its result
+
+(A separate validator scores the result, so you do NOT need to call
+check_ats_score yourself unless you are unsure a rewrite helped.)
 
 HARD RULES:
 - NEVER invent skills, metrics, or experience not in the original CV
@@ -110,24 +114,23 @@ Follow your 5-step process. Call finalize_cv last."""
 def tailor_cv_node(state):
     """Reads filtered_jobs / cv_text / ats_feedback; writes tailored_cvs.
 
-    Runs jobs one at a time with a short delay to stay under free-tier rate
-    limits — the fix for 'all tailored CVs look identical'.
+    Tailors jobs in parallel on a high-TPM provider (fast), or one-at-a-time on
+    a free provider to avoid the throttle that made CVs fall back to the
+    original. Each job always gets its OWN job description → distinct CVs.
     """
     cv_text = state["cv_text"]
     filtered_jobs = state["filtered_jobs"]
     ats_feedback = state.get("ats_feedback", {})
 
-    print(f"\n[TAILOR] Processing {len(filtered_jobs)} job(s) sequentially...")
+    workers = max(1, min(MAX_CONCURRENT_JOBS, len(filtered_jobs) or 1))
+    print(f"\n[TAILOR] Processing {len(filtered_jobs)} job(s), concurrency={workers}...")
 
-    tailored_cvs = []
-    for i, job in enumerate(filtered_jobs):
+    def run(job):
         job_key = f"{job['company']}_{job['title']}"
-        feedback = ats_feedback.get(job_key, "")
-        tailored_cvs.append(_tailor_one_job(job, cv_text, feedback))
+        return _tailor_one_job(job, cv_text, ats_feedback.get(job_key, ""))
 
-        # Space out calls to stay under the token-per-minute ceiling.
-        if i < len(filtered_jobs) - 1:
-            time.sleep(DELAY_BETWEEN_JOBS)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        tailored_cvs = list(pool.map(run, filtered_jobs))
 
     n_tailored = sum(1 for r in tailored_cvs if r.get("tailored"))
     print(f"[TAILOR] Completed: {n_tailored}/{len(tailored_cvs)} actually tailored "
