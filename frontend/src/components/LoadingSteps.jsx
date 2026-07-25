@@ -5,7 +5,7 @@ const STEPS = [
   { label: 'Filtering results', sub: 'Ranking by relevance and requirements' },
   { label: 'Tailoring CVs', sub: 'Optimising each CV for the job posting' },
   { label: 'Validating ATS scores', sub: 'Checking scores ≥ 70% and no fabrication' },
-  { label: 'Building deliverables', sub: 'Generating DOCX files and spreadsheet' },
+  { label: 'Building deliverables', sub: 'Generating PDF CVs and spreadsheet' },
 ]
 
 export default function LoadingSteps({ currentStep }) {

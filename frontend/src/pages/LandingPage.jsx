@@ -13,7 +13,7 @@ const FEATURES = [
   { icon: Target, title: 'ATS-optimised', desc: 'Each CV is scored and rewritten until it passes the 70% threshold.' },
   { icon: ShieldCheck, title: 'No fabrication', desc: 'Hard guardrails prevent invented skills, metrics, or companies.' },
   { icon: Clock, title: 'Minutes not hours', desc: 'What takes days of manual work is done while you grab coffee.' },
-  { icon: Download, title: 'Ready to send', desc: 'Receive polished DOCX files and a job-tracker spreadsheet.' },
+  { icon: Download, title: 'Ready to send', desc: 'Receive polished, ATS-ready PDF CVs and a job-tracker spreadsheet.' },
   { icon: FileText, title: 'Full transparency', desc: 'Preview every tailored CV before downloading or applying.' },
 ]
 

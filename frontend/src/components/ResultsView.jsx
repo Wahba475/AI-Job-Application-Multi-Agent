@@ -64,7 +64,7 @@ export default function ResultsView({ results, onReset }) {
       ) : (
         <div
           data-aos="fade-up"
-          className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-px bg-outline-variant border border-outline-variant"
+          className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
         >
           {jobs.map((job, i) => (
             <JobCard key={i} job={job} historyId={historyId} onPreview={setPreviewJob} />

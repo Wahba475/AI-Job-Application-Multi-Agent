@@ -21,7 +21,7 @@ from services.history_service import (
     list_history,
 )
 
-DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+PDF_MIME = "application/pdf"
 
 
 def _handle(fn):
@@ -93,13 +93,13 @@ async def download_cv_handler(
     job_index: int,
     user: dict = Depends(get_current_user),
 ):
-    """Stream one job's tailored CV .docx to its owner (auth-protected)."""
+    """Stream one job's tailored CV .pdf to its owner (auth-protected)."""
     try:
         data, filename = get_cv_file(history_id, user["id"], job_index)
     except HistoryError as e:
         raise HTTPException(status_code=e.status, detail=e.message)
     return Response(
         content=data,
-        media_type=DOCX_MIME,
+        media_type=PDF_MIME,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

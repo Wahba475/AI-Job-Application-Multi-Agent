@@ -1,6 +1,6 @@
 import os
 import re
-from ..tools.cv_generator import generate_cv_docx
+from ..tools.cv_generator import generate_cv_pdf
 
 
 def cv_filename_for(job) -> str:
@@ -9,7 +9,7 @@ def cv_filename_for(job) -> str:
     so we keep ONLY [A-Za-z0-9._-] and collapse everything else to "_"."""
     raw  = f"CV_{job['company']}_{job['title']}"
     safe = re.sub(r"[^A-Za-z0-9._-]+", "_", raw).strip("_")
-    return f"{safe or 'CV'}.docx"
+    return f"{safe or 'CV'}.pdf"
 
 
 def run_dir(run_id: str) -> str:
@@ -41,7 +41,7 @@ def build_deliverable_node(state):
         filename = cv_filename_for(job)
         path     = os.path.join(cv_dir, filename)
 
-        generate_cv_docx(item["cv_text"], path, "")
+        generate_cv_pdf(item["cv_text"], path, "")
 
         job_results.append({
             "title":           job.get("title", ""),

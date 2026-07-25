@@ -74,7 +74,7 @@ def get_cv_file(history_id: str, user_id: str, job_index: int) -> tuple[bytes, s
     if not bucket or not path:
         raise HistoryError(404, "CV file unavailable")
     data = storage_svc.download_file(bucket, path)
-    return data, job.get("cv_filename") or "CV.docx"
+    return data, job.get("cv_filename") or "CV.pdf"
 
 
 def list_history(user_id: str) -> list[dict]:

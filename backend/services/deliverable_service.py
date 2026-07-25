@@ -48,7 +48,7 @@ def finalize_run(user_id: str, run_id: str, job_results: list[dict]) -> dict:
             bucket, path = storage_service.upload_file(
                 user_id=user_id, run_id=run_id,
                 filename=job["cv_filename"], data=data,
-                content_type=storage_service.DOCX_MIME,
+                content_type=storage_service.PDF_MIME,
             )
             entry["cv_bucket"] = bucket
             entry["cv_path"] = path

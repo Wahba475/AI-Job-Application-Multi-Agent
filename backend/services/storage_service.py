@@ -14,6 +14,7 @@ from db.supabase_client import get_supabase
 BUCKET = os.getenv("SUPABASE_BUCKET", "deliverables")
 
 # Content-type constants reused by callers.
+PDF_MIME  = "application/pdf"
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 

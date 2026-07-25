@@ -125,7 +125,7 @@ export const PipelineProvider = ({ children }) => {
       const url = URL.createObjectURL(res.data)
       const a = document.createElement('a')
       a.href = url
-      a.download = filename || 'CV.docx'
+      a.download = filename || 'CV.pdf'
       a.click()
       URL.revokeObjectURL(url)
     } catch (error) {

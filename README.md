@@ -5,7 +5,7 @@ search: finding relevant openings and tailoring your CV to each one. You upload
 your CV once and set a target role; a multi-agent AI pipeline searches live job
 boards, filters to genuine matches, rewrites your CV per job to maximise its ATS
 (Applicant Tracking System) score, validates every result for honesty, and hands
-back ready-to-send `.docx` files plus a tracking spreadsheet.
+back ready-to-send, ATS-friendly `.pdf` CVs plus a tracking spreadsheet.
 
 Its defining principle is **honesty over vanity metrics**: the agent will never
 invent skills or experience to inflate a match score. If you're a weak fit for a
@@ -43,7 +43,7 @@ interview.
    real content from your original CV, to maximise keyword/ATS match.
 4. **Validate** — every tailored CV is scored against the job and checked for
    fabrication. You get an honest ATS score and a "missing from your CV" list.
-5. **Deliver** — generates a formatted `.docx` per job and an `.xlsx` tracker,
+5. **Deliver** — generates an ATS-friendly `.pdf` per job and an `.xlsx` tracker,
    stores them, and shows a results page with previews, downloads, and per-job
    scores. Runs are saved to your history.
 
@@ -64,7 +64,7 @@ START → search_jobs → filter_relevance → tailor_cv → validate_ats → bu
 | `filter_relevance` | `ai/nodes/filter_node.py` | One batched CV-aware call selects the best matches |
 | `tailor_cv` | `ai/nodes/tailor_cv_node.py` | ReAct agent rewrites the CV per job (runs jobs concurrently) |
 | `validate_ats` | `ai/nodes/validate_ats_node.py` | Scores each CV + fabrication check + gap list |
-| `build_deliverable` | `ai/nodes/build_deliverable_node.py` | Renders `.docx` CVs + `.xlsx` spreadsheet |
+| `build_deliverable` | `ai/nodes/build_deliverable_node.py` | Renders `.pdf` CVs + `.xlsx` spreadsheet |
 
 The **tailor** node is an agent, not a single prompt: it uses four tools
 (`ai/tools/tailor_tools.py`) — `extract_jd_keywords`, `rewrite_cv_section`,
@@ -89,7 +89,7 @@ The diagram shows the full run:
   **fallback chain** (bottom): **Groq → NVIDIA → Ollama**. If a provider errors
   or throttles, the next one takes over; if all fail for a job, that job is
   delivered as the untailored original and flagged `tailored=false`.
-- **After the graph**, the controller uploads each `.docx` + the spreadsheet to
+- **After the graph**, the controller uploads each `.pdf` + the spreadsheet to
   **Supabase Storage** and writes one **history row** (per-job results in a
   `jobs` JSONB column, including each CV's storage path). Downloads are then
   served through the auth-protected `/api/history/{id}/cv/{index}` endpoint.
@@ -124,7 +124,7 @@ for Postgres + file storage.
 animations.
 
 **AI / data** — LLM providers are pluggable (NVIDIA NIM / Groq / local Ollama);
-job data from JSearch (RapidAPI); `.docx` via `python-docx`, `.xlsx` via
+job data from JSearch (RapidAPI); `.pdf` via `reportlab`, `.xlsx` via
 `openpyxl`.
 
 ---
