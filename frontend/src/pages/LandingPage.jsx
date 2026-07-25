@@ -63,14 +63,12 @@ export default function LandingPage() {
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-px bg-hairline border border-hairline">
+          <div
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-px bg-hairline border border-hairline"
+            data-aos="fade-up"
+          >
             {STEPS.map((step, i) => (
-              <div
-                key={i}
-                className="bg-canvas p-8"
-                data-aos="fade"
-                data-aos-delay={i * 80}
-              >
+              <div key={i} className="bg-canvas p-8">
                 <div className="w-10 h-10 bg-ink flex items-center justify-center mb-6">
                   <step.icon size={18} className="text-canvas" />
                 </div>
@@ -95,14 +93,12 @@ export default function LandingPage() {
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px bg-outline-variant border border-outline-variant">
+          <div
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px bg-outline-variant border border-outline-variant"
+            data-aos="fade-up"
+          >
             {FEATURES.map((feat, i) => (
-              <div
-                key={i}
-                className="bg-canvas p-8"
-                data-aos="fade"
-                data-aos-delay={i * 60}
-              >
+              <div key={i} className="bg-canvas p-8">
                 <feat.icon size={20} className="text-mint-teal mb-4" />
                 <h3 className="font-display font-semibold text-base text-ink mb-2">{feat.title}</h3>
                 <p className="font-body text-sm text-ink-muted leading-relaxed">{feat.desc}</p>
