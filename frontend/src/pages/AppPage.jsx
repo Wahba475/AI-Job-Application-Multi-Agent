@@ -76,6 +76,11 @@ function FormState({ onSubmit }) {
               onChange={(e) => setLocation(e.target.value)}
               className={inputClass}
             />
+            <p className="mt-1.5 font-body text-xs text-ink-muted">
+              Tip: some local markets (e.g. Egypt) have few listings in the job
+              index — try <span className="font-medium text-ink">Remote</span> or a
+              major hub for more matches.
+            </p>
           </div>
 
           <div>
