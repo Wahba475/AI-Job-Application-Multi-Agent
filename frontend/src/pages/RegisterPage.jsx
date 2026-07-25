@@ -11,14 +11,22 @@ export default function RegisterPage() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
+
+  const validate = () => {
+    const e = {}
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) e.email = 'Enter a valid email address.'
+    if (password.length < 6) e.password = 'Password must be at least 6 characters.'
+    if (confirm !== password) e.confirm = 'Passwords do not match.'
+    setErrors(e)
+    return Object.keys(e).length === 0
+  }
 
   const onSubmit = async (e) => {
     e.preventDefault()
-    if (!email || !password) {
-      toast.error('Please fill in all fields')
-      return
-    }
+    if (!validate()) return
 
     setSubmitting(true)
     const loadingToast = toast.loading('Creating account…')
@@ -89,8 +97,9 @@ export default function RegisterPage() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full h-btn px-4 bg-canvas border border-hairline font-body text-sm text-ink outline-none focus:border-mint-teal transition-colors"
+                className={`w-full h-btn px-4 bg-canvas border font-body text-sm text-ink outline-none focus:border-mint-teal transition-colors ${errors.email ? 'border-error' : 'border-hairline'}`}
               />
+              {errors.email && <p className="mt-1.5 font-body text-xs text-error">{errors.email}</p>}
             </div>
 
             <div>
@@ -102,12 +111,29 @@ export default function RegisterPage() {
                 type="password"
                 autoComplete="new-password"
                 required
-                minLength={6}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full h-btn px-4 bg-canvas border border-hairline font-body text-sm text-ink outline-none focus:border-mint-teal transition-colors"
+                className={`w-full h-btn px-4 bg-canvas border font-body text-sm text-ink outline-none focus:border-mint-teal transition-colors ${errors.password ? 'border-error' : 'border-hairline'}`}
               />
-              <p className="mt-2 font-body text-xs text-ink-subtle">At least 6 characters.</p>
+              {errors.password
+                ? <p className="mt-1.5 font-body text-xs text-error">{errors.password}</p>
+                : <p className="mt-2 font-body text-xs text-ink-subtle">At least 6 characters.</p>}
+            </div>
+
+            <div>
+              <label htmlFor="confirm" className="block font-body text-xs tracking-caps uppercase text-ink-muted mb-2">
+                Confirm Password
+              </label>
+              <input
+                id="confirm"
+                type="password"
+                autoComplete="new-password"
+                required
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                className={`w-full h-btn px-4 bg-canvas border font-body text-sm text-ink outline-none focus:border-mint-teal transition-colors ${errors.confirm ? 'border-error' : 'border-hairline'}`}
+              />
+              {errors.confirm && <p className="mt-1.5 font-body text-xs text-error">{errors.confirm}</p>}
             </div>
 
             <button

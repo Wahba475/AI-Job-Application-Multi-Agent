@@ -9,6 +9,7 @@ import logging
 from typing import Optional
 
 import redis.asyncio as redis
+import redis as redis_sync_mod
 
 from config.settings import REDIS_URL
 
@@ -16,6 +17,33 @@ logger = logging.getLogger("applyai.redis")
 
 _client: Optional[redis.Redis] = None
 _available: bool = False
+
+# Separate SYNC client for the job store, which is written/read from the
+# synchronous pipeline worker thread (can't await there).
+_sync_client = None
+_sync_ok = False
+
+
+def get_redis_sync():
+    """Lazily create a sync Redis client. Returns the client or None."""
+    global _sync_client, _sync_ok
+    if _sync_client is None:
+        try:
+            _sync_client = redis_sync_mod.from_url(
+                REDIS_URL, decode_responses=True,
+                socket_connect_timeout=2, socket_timeout=2,
+            )
+            _sync_client.ping()
+            _sync_ok = True
+        except Exception as exc:
+            logger.warning("Sync Redis unavailable — job store falls back to memory. %s", exc)
+            _sync_client = None
+            _sync_ok = False
+    return _sync_client if _sync_ok else None
+
+
+def redis_sync_available() -> bool:
+    return get_redis_sync() is not None
 
 
 def is_redis_available() -> bool:

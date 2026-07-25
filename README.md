@@ -71,6 +71,33 @@ The **tailor** node is an agent, not a single prompt: it uses four tools
 `check_ats_score`, `finalize_cv` — and decides how to apply them. The clean CV is
 read from the `finalize_cv` tool's output, never from the model's chat message.
 
+### Orchestration diagram
+
+![ApplyAI LangGraph orchestration](docs/langgraph_orchestration.png)
+
+The diagram shows the full run:
+
+- **The StateGraph** (yellow, top) runs the five nodes in order, threading one
+  shared `JobAgentState` through them.
+- **`tailor_cv`** expands into a **ReAct agent** (middle) that runs *per job,
+  one at a time* — `extract_jd_keywords → check_ats_score → rewrite_cv_section →
+  check_ats_score → finalize_cv`. Sequential execution (with a short delay)
+  keeps each job under the free-tier token-per-minute limit, so every CV is
+  genuinely tailored to *its own* job description instead of all falling back to
+  the original.
+- **Every LLM call** (filter, each agent step, validate) flows through the
+  **fallback chain** (bottom): **Groq → NVIDIA → Ollama**. If a provider errors
+  or throttles, the next one takes over; if all fail for a job, that job is
+  delivered as the untailored original and flagged `tailored=false`.
+- **After the graph**, the controller uploads each `.docx` + the spreadsheet to
+  **Supabase Storage** and writes one **history row** (per-job results in a
+  `jobs` JSONB column, including each CV's storage path). Downloads are then
+  served through the auth-protected `/api/history/{id}/cv/{index}` endpoint.
+
+*(This PNG is generated from the real graph via
+`pipeline.get_graph().draw_mermaid_png()` plus the annotated Mermaid source in
+the audit tooling; the raw auto-rendered graph is at `docs/langgraph_raw.png`.)*
+
 ---
 
 ## The honest-CV philosophy
@@ -183,52 +210,11 @@ cd frontend
 npm install
 ```
 
----
-
-## Environment variables
-
-Create a `.env` in the project root (never commit it — it's gitignored):
-
-```env
-# LLM provider: nvidia (free, default) | groq | ollama (local)
-LLM_PROVIDER=nvidia
-NVIDIA_API=nvapi-...
-GROQ_API=gsk_...                 # only if LLM_PROVIDER=groq
-
-# Job search
-JSearch_API=...                  # RapidAPI JSearch key
-
-# Supabase (auth + history + storage)
-SUPABASE_URL=https://<project-ref>.supabase.co
-SUPABASE_SERVICE_KEY=sb_secret_...   # service_role/secret key — backend only
-SUPABASE_BUCKET=deliverables
-
-# Auth
-JWT_SECRET=<random 48+ char string>
-
-# Redis (rate limiting)
-REDIS_URL=redis://localhost:6379
-```
-
-Frontend `frontend/.env` (see `frontend/.env.example`):
-
-```env
-VITE_API_URL=http://127.0.0.1:8001
-```
-
----
-
-## Database & storage setup
-
-1. In the Supabase dashboard, open **SQL Editor** and run
-   [`backend/db/schema.sql`](backend/db/schema.sql). It creates:
-   - `users` — email, bcrypt password hash (custom JWT auth, not Supabase Auth)
-   - `runs` — one row per pipeline run, with a `jobs` JSONB column holding each
-     job's ATS score, gaps, and stored-CV reference
-2. Under **Storage**, create a **private** bucket named `deliverables`.
-   Generated CVs and spreadsheets are uploaded to
-   `deliverables/{user_id}/{run_id}/…` and served via short-lived **signed URLs**
-   (never public).
+Configure a project-root `.env` (Supabase, an LLM key, JSearch, a JWT secret,
+Redis) and run [`backend/db/schema.sql`](backend/db/schema.sql) once in the
+Supabase SQL editor, then create a private `deliverables` storage bucket.
+Generated CVs + spreadsheets are stored per user/run and served via short-lived
+signed URLs (never public).
 
 ---
 

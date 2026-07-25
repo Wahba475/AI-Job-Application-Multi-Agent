@@ -64,3 +64,15 @@ def delete_file(bucket: str, path: str) -> None:
     callers do not need to guard against double-deletes.
     """
     get_supabase().storage.from_(bucket).remove([path])
+
+
+def download_file(bucket: str, path: str) -> bytes:
+    """Download an object's raw bytes. Used by the auth-protected CV endpoint,
+    which streams the file to the logged-in owner (never a public URL)."""
+    return get_supabase().storage.from_(bucket).download(path)
+
+
+# Spreadsheet CV links are opened in Excel OUTSIDE the app, where no auth token
+# exists — so those must be pre-signed URLs. 7 days balances "works when the
+# user opens the tracker later" against "a leaked link eventually dies".
+SPREADSHEET_URL_TTL_SECONDS = 7 * 24 * 3600

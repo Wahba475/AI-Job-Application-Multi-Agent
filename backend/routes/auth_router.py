@@ -1,7 +1,6 @@
 """Auth ROUTER — maps URLs to controller handlers.
 
-Login/register are public (IP rate-limited).
-/me is protected with JWT.
+Login/register are public. /me is protected with JWT.
 """
 from fastapi import APIRouter, Depends
 
@@ -11,6 +10,7 @@ from middleware.rate_limiter_middleware import AuthLimit
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+# Public but IP rate-limited (brute-force protection).
 router.post("/register", dependencies=[Depends(AuthLimit)])(register)
 router.post("/login", dependencies=[Depends(AuthLimit)])(login)
 router.get("/me", dependencies=[Depends(get_current_user)])(me)

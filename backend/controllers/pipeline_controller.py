@@ -1,132 +1,152 @@
-"""Pipeline CONTROLLER — handles /run-pipeline and job-status polling.
+"""Pipeline CONTROLLER — /run-pipeline (auth-gated) + status polling.
 
-What changed in this version:
-  - run_pipeline() now requires authentication (Depends(get_current_user)).
-    The authenticated user_id is needed to scope the history record.
-  - The background task _run_job() now:
-      1. Runs the LangGraph pipeline (unchanged).
-      2. Uploads outputs/jobs.xlsx to Supabase Storage.
-      3. Inserts one history record.
-      4. Handles partial failures with a compensating delete
-         (see the upload/history block for the full failure strategy).
+Flow of a run:
+  1. Validate the upload (extension + magic bytes + size).
+  2. Extract CV text (never 500s — bad files return 400).
+  3. Start a background job (job_id == run_id).
+  4. Background: stream the pipeline (reporting each step) → upload deliverables
+     to Supabase → insert one history row (with per-job results) → store the
+     frontend payload in the job store.
 """
 import asyncio
+import logging
 import os
-import uuid
 
-from fastapi import Depends, File, Form, HTTPException, UploadFile
+from fastapi import Depends, File, Form, HTTPException, Request, UploadFile
 
 from middleware.auth_middleware import get_current_user
-from services.job_store import create_job, get_job, set_error, set_result
+from services.job_store import create_job, get_job, set_error, set_result, set_step
 from services.pipeline_service import run_job_pipeline
-from services import storage_service
-from services import history_service
+from services import deliverable_service, history_service
 from utils.cv_extractor import extract_cv_text
 
-ALLOWED_CV_EXTENSIONS = {".pdf", ".docx"}
-MAX_CV_SIZE            = 5 * 1024 * 1024  # 5 MB
+logger = logging.getLogger("applyai.pipeline")
 
-# Keep references so background tasks are not garbage-collected mid-run.
+ALLOWED_CV_EXTENSIONS = {".pdf", ".docx"}
+MAX_CV_SIZE = 5 * 1024 * 1024  # 5 MB
+# Magic bytes: PDF = "%PDF", DOCX = ZIP container "PK\x03\x04".
+_PDF_MAGIC = b"%PDF"
+_ZIP_MAGIC = b"PK\x03\x04"
+
 _background_tasks: set = set()
 
 
+def _validate_upload_headers(ext: str, content_length: str | None) -> None:
+    if ext not in ALLOWED_CV_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Only .pdf and .docx CVs are accepted")
+    # Coarse pre-check on the whole multipart body before we read it.
+    if content_length and content_length.isdigit() and int(content_length) > MAX_CV_SIZE + 1024 * 1024:
+        raise HTTPException(status_code=413, detail="CV file too large (max 5 MB)")
+
+
+def _validate_content(ext: str, contents: bytes) -> None:
+    if len(contents) > MAX_CV_SIZE:
+        raise HTTPException(status_code=400, detail="CV file too large (max 5 MB)")
+    if ext == ".pdf" and not contents.startswith(_PDF_MAGIC):
+        raise HTTPException(status_code=400, detail="File is not a valid PDF")
+    if ext == ".docx" and not contents.startswith(_ZIP_MAGIC):
+        raise HTTPException(status_code=400, detail="File is not a valid DOCX")
+
+
 async def run_pipeline(
+    request:    Request,
     job_title:  str        = Form(...),
     location:   str        = Form(...),
     experience: str        = Form(...),
     cv_file:    UploadFile = File(...),
-    user:       dict       = Depends(get_current_user),   # ← auth added
+    user:       dict       = Depends(get_current_user),
 ):
-    # ── CV validation ─────────────────────────────────────────────────────────
     ext = os.path.splitext(cv_file.filename or "")[1].lower()
-    if ext not in ALLOWED_CV_EXTENSIONS:
-        raise HTTPException(status_code=400, detail="Only .pdf and .docx CVs are accepted")
+    _validate_upload_headers(ext, request.headers.get("content-length"))
 
     contents = await cv_file.read()
-    if len(contents) > MAX_CV_SIZE:
-        raise HTTPException(status_code=400, detail="CV file too large (max 5 MB)")
+    _validate_content(ext, contents)
 
-    # ── Write to temp, extract text, clean up ─────────────────────────────────
+    # Extract text — a malformed file must be a clean 400, never a 500.
     os.makedirs("temp", exist_ok=True)
-    temp_path = os.path.join("temp", f"{uuid.uuid4().hex}{ext}")
+    temp_path = os.path.join("temp", f"{os.urandom(8).hex()}{ext}")
     with open(temp_path, "wb") as f:
         f.write(contents)
     try:
         cv_text = extract_cv_text(temp_path)
+    except Exception as e:
+        logger.warning("CV extraction failed: %s", e)
+        raise HTTPException(status_code=400, detail="Could not read the CV file. Please upload a valid PDF or DOCX.")
     finally:
         os.remove(temp_path)
 
-    # ── Kick off background job ───────────────────────────────────────────────
-    job_id = create_job()
+    if not cv_text or not cv_text.strip():
+        raise HTTPException(status_code=400, detail="The uploaded CV appears to be empty or unreadable.")
+
+    job_id = create_job()          # job_id doubles as run_id
+    user_id = user["id"]
 
     async def _run_job():
-        # ── 1. Run the LangGraph pipeline ────────────────────────────────────
         try:
             result = await asyncio.to_thread(
-                run_job_pipeline, job_title, location, experience, cv_text
+                run_job_pipeline, job_id, job_title, location, experience, cv_text,
+                lambda node: set_step(job_id, node),
             )
         except Exception as e:
-            print(f"[PIPELINE] job={job_id} failed: {e}")
+            logger.exception("Pipeline failed job=%s", job_id)
             set_error(job_id, "Pipeline run failed. Please try again.")
             return
 
-        # ── 2. Upload jobs.xlsx to Supabase Storage ───────────────────────────
-        xlsx_path = os.path.join("outputs", "jobs.xlsx")
-        if not os.path.exists(xlsx_path):
-            print(f"[PIPELINE] job={job_id}: jobs.xlsx not found — skipping upload")
-            set_result(job_id, result)
+        job_results = result.get("job_results", [])
+        if not job_results:
+            set_result(job_id, {**result, "history_id": None, "jobs": []})
             return
 
+        # Persist deliverables (CVs + spreadsheet) to Supabase.
         try:
-            with open(xlsx_path, "rb") as f:
-                xlsx_bytes = f.read()
-
-            bucket, path = storage_service.upload_file(
-                user_id      = user["id"],
-                run_id       = job_id,
-                filename     = "jobs.xlsx",
-                data         = xlsx_bytes,
-                content_type = storage_service.XLSX_MIME,
-            )
-        except Exception as upload_err:
-            # Upload failed — nothing was written to storage or DB.
-            # Pipeline result is still useful so we preserve it.
-            print(f"[PIPELINE] job={job_id}: storage upload failed: {upload_err}")
-            set_result(job_id, {**result, "history_id": None, "storage_error": str(upload_err)})
+            set_step(job_id, "uploading")
+            persisted = await asyncio.to_thread(
+                deliverable_service.finalize_run, user_id, job_id, job_results)
+        except Exception as e:
+            logger.exception("Deliverable upload failed job=%s", job_id)
+            set_error(job_id, "Run completed but files could not be saved. Please try again.")
             return
 
-        # ── 3. Save history record ────────────────────────────────────────────
-        # Failure strategy: if the DB insert fails after a successful upload,
-        # we immediately delete the uploaded file (compensating action) so no
-        # orphaned objects are left in storage.
+        # Insert the history row (per-job results incl. CV storage paths).
         try:
             entry = history_service.create_history_entry(
-                user_id            = user["id"],
-                job_title          = job_title,
-                location           = location,
-                experience         = experience,
-                spreadsheet_bucket = bucket,
-                spreadsheet_path   = path,
+                user_id=user_id, run_id=job_id,
+                job_title=job_title, location=location, experience=experience,
+                spreadsheet_bucket=persisted["spreadsheet_bucket"],
+                spreadsheet_path=persisted["spreadsheet_path"],
+                jobs=persisted["jobs"],
             )
             history_id = entry["id"]
-        except Exception as db_err:
-            print(f"[PIPELINE] job={job_id}: history insert failed: {db_err} — compensating")
-            try:
-                storage_service.delete_file(bucket, path)
-                print(f"[PIPELINE] job={job_id}: orphaned file cleaned up successfully")
-            except Exception as cleanup_err:
-                # Both the DB write and the compensating delete failed.
-                # Log the exact path so it can be removed manually.
-                print(
-                    f"[CRITICAL] Orphaned file — manual cleanup required: "
-                    f"bucket={bucket}, path={path} | "
-                    f"db_err={db_err} | cleanup_err={cleanup_err}"
-                )
-            set_error(job_id, "Pipeline completed but history could not be saved.")
+        except Exception as e:
+            logger.exception("History insert failed job=%s", job_id)
+            set_error(job_id, "Run completed but history could not be saved.")
             return
 
-        # ── 4. Everything succeeded ───────────────────────────────────────────
-        set_result(job_id, {**result, "history_id": history_id})
+        # Frontend payload — CV/spreadsheet served via the auth history endpoints.
+        frontend_jobs = []
+        for idx, (jr, pj) in enumerate(zip(job_results, persisted["jobs"])):
+            frontend_jobs.append({
+                "index":       idx,
+                "title":       pj["title"],
+                "company":     pj["company"],
+                "location":    pj["location"],
+                "type":        pj["type"],
+                "apply_link":  pj["apply_link"],
+                "ats_score":   pj["ats_score"],
+                "gaps":        pj["gaps"],
+                "tailored":    pj["tailored"],
+                "cv_filename": pj["cv_filename"],
+                "cv_text":     jr.get("cv_text", ""),
+            })
+
+        set_result(job_id, {
+            "run_id":         job_id,
+            "history_id":     history_id,
+            "total_jobs":     result["total_jobs"],
+            "approved_count": result["approved_count"],
+            "retry_rounds":   result["retry_rounds"],
+            "jobs":           frontend_jobs,
+        })
 
     task = asyncio.create_task(_run_job())
     _background_tasks.add(task)
@@ -140,24 +160,3 @@ async def get_pipeline_status(job_id: str):
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
-
-
-async def download_file(filename: str):
-    """Serve a file directly from the local outputs/ directory.
-
-    This endpoint is kept for backward compatibility (e.g. CV .docx files).
-    Spreadsheets are now served via /history/{id}/download instead.
-    """
-    safe_name    = os.path.basename(filename)
-    outputs_root = os.path.realpath("outputs")
-
-    for candidate in (
-        os.path.join(outputs_root, "CVs", safe_name),
-        os.path.join(outputs_root, safe_name),
-    ):
-        resolved = os.path.realpath(candidate)
-        if resolved.startswith(outputs_root + os.sep) and os.path.exists(resolved):
-            from fastapi.responses import FileResponse
-            return FileResponse(resolved, filename=safe_name)
-
-    raise HTTPException(status_code=404, detail="File not found")

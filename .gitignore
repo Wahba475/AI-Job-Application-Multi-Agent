@@ -34,3 +34,7 @@ e2e_*.json
 extra_results.json
 verification_suite.py
 verification_results.json
+TEST_REPORT.md
+backend_stdout.log
+backend_stderr.log
+frontend/dist/

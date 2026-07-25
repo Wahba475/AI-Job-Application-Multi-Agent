@@ -1,13 +1,18 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { Download, RotateCcw } from 'lucide-react'
 
 import { usePipeline } from '../context/PipelineContext'
 import FileUpload from '../components/FileUpload'
 import LoadingSteps from '../components/LoadingSteps'
-import JobCard from '../components/JobCard'
-import CVPreviewModal from '../components/CVPreviewModal'
+import ResultsView from '../components/ResultsView'
+
+const STEP_LABELS = [
+  'Searching job boards',
+  'Filtering to real matches',
+  'Tailoring your CV per job',
+  'Validating ATS scores',
+  'Building your deliverables',
+]
 
 const EXPERIENCE_OPTIONS = [
   'Entry Level (0–2 years)',
@@ -110,79 +115,18 @@ function FormState({ onSubmit }) {
 
 // ── Loading ──────────────────────────────────────────────────────────────────
 function LoadingState({ currentStep }) {
+  const label = STEP_LABELS[Math.min(currentStep, STEP_LABELS.length - 1)]
   return (
     <div className="max-w-lg mx-auto px-6 py-24 flex flex-col items-center text-center">
       <div className="w-12 h-12 border-2 border-ink border-t-transparent rounded-pill animate-spin mb-8" />
       <h2 className="font-display font-medium text-2xl text-ink tracking-tight mb-2">
         Processing your application
       </h2>
-      <p className="font-body text-sm text-ink-muted mb-10">
-        This takes a few minutes. Don't close this tab.
+      <p className="font-body text-sm text-ink-muted mb-1">
+        This usually takes 2–4 minutes. Don't close this tab — you can safely refresh.
       </p>
+      <p className="font-body text-sm font-medium text-secondary mb-10">{label}…</p>
       <LoadingSteps currentStep={currentStep} />
-    </div>
-  )
-}
-
-// ── Results ──────────────────────────────────────────────────────────────────
-function ResultsState({ results, onReset }) {
-  const [previewJob, setPreviewJob] = useState(null)
-  const { downloadFile } = usePipeline()
-
-  return (
-    <div className="max-w-6xl mx-auto px-6 py-16">
-      {/* Summary banner */}
-      <div
-        className="border border-mint-teal bg-secondary-container/20 p-6 mb-10 flex flex-col md:flex-row md:items-center md:justify-between gap-4"
-        data-aos="fade-up"
-      >
-        <div>
-          <p className="font-body text-xs tracking-caps uppercase text-secondary mb-1">Pipeline complete</p>
-          <p className="font-display font-semibold text-2xl text-ink">
-            {results.approved_count} job{results.approved_count !== 1 ? 's' : ''} matched
-          </p>
-          <p className="font-body text-sm text-ink-muted mt-1">
-            {results.total_jobs} found · {results.retry_rounds} validation round{results.retry_rounds !== 1 ? 's' : ''}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          <button
-            type="button"
-            onClick={() => downloadFile(results.spreadsheet_download)}
-            className="inline-flex items-center gap-2 h-btn px-5 border border-hairline text-ink font-body text-sm font-medium rounded-pill hover:bg-surface-dim transition-colors"
-          >
-            <Download size={14} /> Download Spreadsheet
-          </button>
-          <button
-            onClick={onReset}
-            className="inline-flex items-center gap-2 h-btn px-5 bg-ink text-canvas font-body text-sm font-medium rounded-pill hover:bg-on-surface transition-colors"
-          >
-            <RotateCcw size={14} /> New Search
-          </button>
-        </div>
-      </div>
-
-      {/* Job grid */}
-      {results.jobs.length === 0 ? (
-        <div className="text-center py-16">
-          <p className="font-body text-sm text-ink-muted">No jobs passed validation. Try a broader search.</p>
-        </div>
-      ) : (
-        <div
-          data-aos="fade-up"
-          className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-px bg-outline-variant border border-outline-variant"
-        >
-          {results.jobs.map((job, i) => (
-            <JobCard key={i} job={job} onPreview={setPreviewJob} />
-          ))}
-        </div>
-      )}
-
-      <CVPreviewModal
-        isOpen={!!previewJob}
-        onClose={() => setPreviewJob(null)}
-        jobData={previewJob}
-      />
     </div>
   )
 }
@@ -210,6 +154,6 @@ export default function AppPage() {
   }
 
   if (loading) return <LoadingState currentStep={currentStep} />
-  if (results) return <ResultsState results={results} onReset={handleReset} />
+  if (results) return <ResultsView results={results} onReset={handleReset} />
   return <FormState onSubmit={handleSubmit} />
 }

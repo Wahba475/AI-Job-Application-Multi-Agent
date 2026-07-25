@@ -1,50 +1,56 @@
 from ai.graph import pipeline
-from ai.nodes.build_deliverable_node import cv_filename_for
 
 
-def run_job_pipeline(job_title: str, location: str, experience: str, cv_text: str) -> dict:
-    result = pipeline.invoke(
-        {
-            "job_title":    job_title,
-            "location":     location,
-            "experience":   experience,
-            "cv_text":      cv_text,
-            "jobs":         [],
-            "filtered_jobs": [],
-            "tailored_cvs": [],
-            "approved_cvs": [],
-            "retry_count":  0,
-            "ats_feedback": {},
-        },
-        # Safety net: the graph is acyclic in normal operation, but this
-        # guarantees it can never hang — it errors cleanly instead of looping.
-        config={"recursion_limit": 12},
-    )
+def run_job_pipeline(run_id: str, job_title: str, location: str,
+                     experience: str, cv_text: str, on_step=None) -> dict:
+    """Run the LangGraph pipeline for one request and return the raw results.
 
-    # Best fit first — the user sees their strongest matches at the top.
+    on_step(node_name) is called as each node finishes, so the controller can
+    surface live progress (search → filter → tailor → validate → build).
+
+    Returns job_results (best-fit first) carrying each CV's local path + text +
+    tailored flag. The controller persists these to Supabase and shapes the
+    frontend/history payload.
+    """
+    initial = {
+        "run_id":       run_id,
+        "job_title":    job_title,
+        "location":     location,
+        "experience":   experience,
+        "cv_text":      cv_text,
+        "jobs":         [],
+        "filtered_jobs": [],
+        "tailored_cvs": [],
+        "approved_cvs": [],
+        "retry_count":  0,
+        "ats_feedback": {},
+        "job_results":  [],
+    }
+
+    # Stream node-by-node so we can report progress; merge updates into state.
+    result = dict(initial)
+    for chunk in pipeline.stream(initial, config={"recursion_limit": 12},
+                                 stream_mode="updates"):
+        for node_name, update in chunk.items():
+            if on_step:
+                try:
+                    on_step(node_name)
+                except Exception:
+                    pass
+            if isinstance(update, dict):
+                result.update(update)
+
+    # Best fit first — strongest matches at the top.
     ranked = sorted(
-        result["approved_cvs"],
-        key=lambda item: item.get("ats_score", 0),
+        result.get("job_results", []),
+        key=lambda j: j.get("ats_score", 0) if isinstance(j.get("ats_score"), (int, float)) else 0,
         reverse=True,
     )
 
     return {
+        "run_id":         run_id,
         "total_jobs":     len(result["jobs"]),
-        "approved_count": len(result["approved_cvs"]),
+        "approved_count": len(ranked),
         "retry_rounds":   result["retry_count"],
-        "jobs": [
-            {
-                "title":       item["job"]["title"],
-                "company":     item["job"]["company"],
-                "location":    item["job"]["location"],
-                "type":        item["job"].get("employment_type", ""),
-                "apply_link":  item["job"]["apply_link"],
-                "ats_score":   item.get("ats_score", 0),
-                "gaps":        item.get("gaps", ""),
-                "cv_text":     item.get("cv_text", ""),
-                "cv_filename": cv_filename_for(item["job"]),
-            }
-            for item in ranked
-        ],
-        "spreadsheet_download": "jobs.xlsx"
+        "job_results":    ranked,
     }

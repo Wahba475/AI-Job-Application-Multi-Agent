@@ -1,35 +1,44 @@
 import os
 import re
 from ..tools.cv_generator import generate_cv_docx
-from ..tools.spreadsheet_builder import build_xlsx
 
 
 def cv_filename_for(job) -> str:
-    """Canonical CV filename for a job. Strips every character Windows
-    forbids in filenames (< > : \" / \\ | ? *) plus whitespace. Used by both
-    the file writer here and the download-link builder in the backend — they
-    MUST agree or download links 404."""
+    """Canonical CV filename for a job. Strips characters Windows forbids in
+    filenames (< > : \" / \\ | ? *) plus whitespace."""
     raw  = f"CV_{job['company']}_{job['title']}"
     safe = re.sub(r'[<>:"/\\|?*\s]+', "_", raw).strip("_")
     return f"{safe}.docx"
 
 
+def run_dir(run_id: str) -> str:
+    """Per-run output directory — isolates concurrent runs so two users never
+    overwrite each other's files (the old fixed outputs/ path was a race)."""
+    return os.path.join("outputs", run_id)
+
+
 def build_deliverable_node(state):
+    """Generate one .docx per approved CV into outputs/{run_id}/CVs/ and return
+    a job_results list for the controller to upload + persist. The spreadsheet
+    is built later (in the controller) once CVs are in Supabase, so its links
+    can point at the stored files."""
     approved_cvs = state["approved_cvs"]
+    run_id = state["run_id"]
 
     if not approved_cvs:
         print("\n[BUILD] No approved CVs to generate.")
-        return {}
+        return {"job_results": []}
 
-    os.makedirs("outputs/CVs", exist_ok=True)
+    cv_dir = os.path.join(run_dir(run_id), "CVs")
+    os.makedirs(cv_dir, exist_ok=True)
     job_results = []
 
-    print(f"\n[BUILD] Generating {len(approved_cvs)} CV file(s)...")
+    print(f"\n[BUILD] Generating {len(approved_cvs)} CV file(s) in {cv_dir}...")
 
     for item in approved_cvs:
         job      = item["job"]
         filename = cv_filename_for(job)
-        path     = f"outputs/CVs/{filename}"
+        path     = os.path.join(cv_dir, filename)
 
         generate_cv_docx(item["cv_text"], path, "")
 
@@ -41,15 +50,13 @@ def build_deliverable_node(state):
             "posted_at":       job.get("posted_at", ""),
             "apply_link":      job.get("apply_link", ""),
             "ats_score":       item.get("ats_score", "N/A"),
-            "cv_path":         path,
+            "gaps":            item.get("gaps", ""),
+            "tailored":        bool(item.get("tailored", False)),
+            "cv_filename":     filename,
+            "cv_local_path":   path,
+            "cv_text":         item.get("cv_text", ""),
         })
+        status = "tailored" if item.get("tailored") else "ORIGINAL(fallback)"
+        print(f"  Generated: {filename} (ATS: {item.get('ats_score','N/A')}%, {status})")
 
-        print(f"  Generated: {path} (ATS: {item.get('ats_score', 'N/A')}%)")
-
-    build_xlsx(job_results, "outputs/jobs.xlsx")
-
-    print(f"\n=== Done ===")
-    print(f"  CVs:         outputs/CVs/  ({len(job_results)} files)")
-    print(f"  Spreadsheet: outputs/jobs.xlsx")
-
-    return {}
+    return {"job_results": job_results}

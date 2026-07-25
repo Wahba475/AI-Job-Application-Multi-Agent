@@ -50,7 +50,7 @@ def search_jobs(job_title: str, location: str, experience: str) -> list:
         jobs.append({
             "title":           job.get("job_title", ""),
             "company":         job.get("employer_name", ""),
-            "location":        job.get("job_city", location),
+            "location":        _job_location(job, location),
             "description":     (job.get("job_description") or "")[:MAX_DESC_CHARS],
             "apply_link":      job.get("job_apply_link", ""),
             "posted_at":       job.get("job_posted_at_datetime_utc", ""),
@@ -58,3 +58,14 @@ def search_jobs(job_title: str, location: str, experience: str) -> list:
         })
 
     return jobs
+
+
+def _job_location(job: dict, fallback: str) -> str:
+    """Best-effort human location. JSearch often leaves job_city null, so chain
+    city -> state -> country, add 'Remote' when flagged, and fall back to the
+    searched location so the column is never empty."""
+    parts = [job.get("job_city"), job.get("job_state"), job.get("job_country")]
+    loc = ", ".join(p for p in parts if p)
+    if job.get("job_is_remote"):
+        loc = f"Remote{(' · ' + loc) if loc else ''}"
+    return loc or fallback or "—"

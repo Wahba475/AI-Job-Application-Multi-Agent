@@ -7,7 +7,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 # CV can honestly score well on, which is what keeps the tailor/validate
 # retry loop from spinning on impossible matches (e.g. a Rust job for a
 # Python-only candidate).
-MAX_JOBS = 5
+MAX_JOBS = 6
 DESCRIPTION_SNIPPET_CHARS = 500
 
 FILTER_SYSTEM_PROMPT = """You are a strict job-matching specialist in an automated job application pipeline.

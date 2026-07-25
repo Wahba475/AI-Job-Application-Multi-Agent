@@ -9,15 +9,19 @@ Responsibilities:
 No business logic lives here.
 """
 from fastapi import Depends, HTTPException
+from fastapi.responses import Response
 
 from middleware.auth_middleware import get_current_user
 from services.history_service import (
     HistoryError,
     delete_history_entry,
+    get_cv_file,
     get_download_url,
     get_history_entry,
     list_history,
 )
+
+DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
 def _handle(fn):
@@ -80,3 +84,22 @@ async def delete_history_handler(
         return {"message": "History entry deleted"}
     except HistoryError as e:
         raise HTTPException(status_code=e.status, detail=e.message)
+
+
+# ── GET /history/{history_id}/cv/{job_index} ──────────────────────────────────
+
+async def download_cv_handler(
+    history_id: str,
+    job_index: int,
+    user: dict = Depends(get_current_user),
+):
+    """Stream one job's tailored CV .docx to its owner (auth-protected)."""
+    try:
+        data, filename = get_cv_file(history_id, user["id"], job_index)
+    except HistoryError as e:
+        raise HTTPException(status_code=e.status, detail=e.message)
+    return Response(
+        content=data,
+        media_type=DOCX_MIME,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

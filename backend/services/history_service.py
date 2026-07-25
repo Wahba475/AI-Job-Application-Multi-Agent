@@ -40,22 +40,41 @@ def _get_and_verify(history_id: str, user_id: str) -> dict:
 
 def create_history_entry(
     user_id: str,
+    run_id: str,
     job_title: str,
     location: str | None,
     experience: str | None,
     spreadsheet_bucket: str,
     spreadsheet_path: str,
+    jobs: list[dict],
 ) -> dict:
-    """Persist one history record.  Called by the pipeline controller after a
-    successful storage upload."""
+    """Persist one history record (with per-job results). Called by the pipeline
+    controller after deliverables are uploaded to Supabase."""
     return history_repo.create_entry(
         user_id=user_id,
+        run_id=run_id,
         job_title=job_title,
         location=location,
         experience=experience,
         spreadsheet_bucket=spreadsheet_bucket,
         spreadsheet_path=spreadsheet_path,
+        jobs=jobs,
     )
+
+
+def get_cv_file(history_id: str, user_id: str, job_index: int) -> tuple[bytes, str]:
+    """Verify ownership, then return (bytes, filename) for one job's tailored CV.
+    Streams from Supabase Storage — the file is never made public."""
+    entry = _get_and_verify(history_id, user_id)
+    jobs = entry.get("jobs") or []
+    if job_index < 0 or job_index >= len(jobs):
+        raise HistoryError(404, "CV not found")
+    job = jobs[job_index]
+    bucket, path = job.get("cv_bucket"), job.get("cv_path")
+    if not bucket or not path:
+        raise HistoryError(404, "CV file unavailable")
+    data = storage_svc.download_file(bucket, path)
+    return data, job.get("cv_filename") or "CV.docx"
 
 
 def list_history(user_id: str) -> list[dict]:

@@ -1,8 +1,8 @@
-import { MapPin, Briefcase, ExternalLink, Eye, Download } from 'lucide-react'
+import { MapPin, Briefcase, ExternalLink, Eye, Download, Sparkles } from 'lucide-react'
 import { usePipeline } from '../context/PipelineContext'
 
-export default function JobCard({ job, onPreview }) {
-  const { downloadFile } = usePipeline()
+export default function JobCard({ job, historyId, onPreview }) {
+  const { downloadCv } = usePipeline()
 
   const score = typeof job.ats_score === 'number' ? job.ats_score : parseInt(job.ats_score) || 0
 
@@ -27,6 +27,15 @@ export default function JobCard({ job, onPreview }) {
           <span className={`inline-flex items-center px-3 py-1 rounded-pill text-xs font-body font-medium ${scoreBadge}`}>
             ATS {score}%
           </span>
+          {job.tailored ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-pill text-[10px] font-body font-medium bg-secondary-container text-secondary uppercase tracking-caps">
+              <Sparkles size={9} /> Tailored
+            </span>
+          ) : (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-pill text-[10px] font-body font-medium bg-yellow-100 text-yellow-800 uppercase tracking-caps">
+              Original (fallback)
+            </span>
+          )}
           {score < 70 && (
             <span className="inline-flex items-center px-2 py-0.5 rounded-pill text-[10px] font-body font-medium bg-surface-dim text-ink-muted uppercase tracking-caps">
               Stretch role
@@ -76,7 +85,7 @@ export default function JobCard({ job, onPreview }) {
 
         <button
           type="button"
-          onClick={() => downloadFile(job.cv_filename)}
+          onClick={() => downloadCv(historyId, job.index, job.cv_filename)}
           className="inline-flex items-center gap-1.5 h-9 px-4 border border-hairline text-ink font-body text-sm font-medium rounded-pill hover:bg-surface-dim transition-colors"
         >
           <Download size={13} /> Download CV
