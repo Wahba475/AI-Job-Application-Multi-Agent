@@ -1,0 +1,29 @@
+# Secrets — never copy into the image (pass at runtime with --env-file)
+.env
+frontend/.env
+*.env.local
+
+# Python cruft
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Frontend (this image is backend-only)
+frontend/
+node_modules/
+
+# Generated pipeline output + logs
+outputs/
+temp/
+*.log
+
+# Tooling / tests / git
+.git/
+.gitignore
+.claude/
+.mcp.json
+.playwright-mcp/
+e2e_*.py
+verification_suite.py
+docs/
