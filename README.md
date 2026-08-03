@@ -284,4 +284,36 @@ Set `LLM_PROVIDER` in `.env`. Configured in `ai/tools/llm_client.py`:
   URLs — private storage, no public file access.
 - **Secrets** (`.env`, `.mcp.json`, service keys) are gitignored and never shipped
   to the frontend, which only ever sees the public API origin.
+- **TLS** — nginx terminates HTTPS, redirects all HTTP → HTTPS, and sends HSTS;
+  the backend is never exposed directly (see Docker deployment).
+
+## Docker deployment
+
+The stack runs as three containers via `docker-compose.yaml`:
+
+| Service | Role |
+| --- | --- |
+| `redis` | rate-limit + job-status store (internal only) |
+| `backend` | FastAPI + the LangGraph pipeline (internal, port 8000) |
+| `nginx` | TLS termination + reverse proxy (published 80/443) |
+
+```bash
+# 1. Generate a self-signed TLS cert (dev/local). Key is gitignored.
+bash scripts/generate-cert.sh
+
+# 2. Build + run everything.
+docker compose up --build -d
+
+# 3. Verify — HTTP redirects to HTTPS; -k trusts the self-signed cert.
+curl -skI http://localhost/health     # 301 -> https
+curl -sk  https://localhost/health     # {"status":"healthy", ...}
 ```
+
+The backend reads secrets from `.env` (via `env_file`); nothing is baked into
+the image. Redis is reachable only on the internal compose network as
+`redis://redis:6379`.
+
+**Production TLS:** self-signed certs trigger browser warnings. For a real
+domain (e.g. on EC2), replace `certs/` with a Let's Encrypt certificate
+(`certbot`) and point `ssl_certificate` / `ssl_certificate_key` in `nginx.conf`
+at the issued files.

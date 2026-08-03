@@ -3,6 +3,10 @@
 frontend/.env
 *.env.local
 
+# ── TLS certs (generate locally with scripts/generate-cert.sh) ──
+certs/*.key
+certs/*.crt
+
 # ── Python ─────────────────────────────────────────────
 venv/
 __pycache__/
